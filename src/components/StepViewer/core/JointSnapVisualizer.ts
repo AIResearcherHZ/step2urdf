@@ -13,6 +13,8 @@ export class JointSnapVisualizer {
   private xArrow: THREE.ArrowHelper
   private yArrow: THREE.ArrowHelper
   private zArrow: THREE.ArrowHelper
+  private axisLine: THREE.Line
+  private originDot: THREE.Mesh
   private visible = false
 
   private currentNormal = new THREE.Vector3(0, 0, 1)
@@ -38,10 +40,51 @@ export class JointSnapVisualizer {
     this.group = new THREE.Group()
     this.group.name = 'snap-gizmo'
     this.group.add(this.xArrow, this.yArrow, this.zArrow)
+
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, 1)
+    ])
+    this.axisLine = new THREE.Line(
+      lineGeo,
+      new THREE.LineDashedMaterial({
+        color: 0x00e5ff,
+        dashSize: len * 0.3,
+        gapSize: len * 0.2,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.9
+      })
+    )
+    this.axisLine.computeLineDistances()
+    this.axisLine.renderOrder = 997
+    this.axisLine.visible = false
+    this.group.add(this.axisLine)
+
+    this.originDot = new THREE.Mesh(
+      new THREE.SphereGeometry(len * 0.08, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00e5ff, depthTest: false, transparent: true })
+    )
+    this.originDot.renderOrder = 999
+    this.group.add(this.originDot)
+
     this.group.visible = false
     this.group.matrixAutoUpdate = false
 
     this.scene.add(this.group)
+  }
+
+  showAxisLine(halfLength: number): void {
+    this.axisLine.scale.set(1, 1, Math.max(halfLength, 1e-6))
+    const mat = this.axisLine.material as THREE.LineDashedMaterial
+    mat.dashSize = halfLength * 0.04
+    mat.gapSize = halfLength * 0.025
+    this.axisLine.computeLineDistances()
+    this.axisLine.visible = true
+  }
+
+  hideAxisLine(): void {
+    this.axisLine.visible = false
   }
 
   updateSnap(position: THREE.Vector3, normal: THREE.Vector3): void {
@@ -85,6 +128,7 @@ export class JointSnapVisualizer {
 
   hide(): void {
     this.group.visible = false
+    this.axisLine.visible = false
     this.visible = false
   }
 

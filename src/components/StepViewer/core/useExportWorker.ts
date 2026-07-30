@@ -30,7 +30,8 @@ export async function exportURDFInWorker(
     linkRestInverseMap: Record<string, number[]>,
     unitScale: number,
     onProgress?: (stage: string, percent: number) => void,
-    extraFiles?: Record<string, string>
+    extraFiles?: Record<string, string>,
+    collisionMeshMap?: Record<string, { positions: Float32Array; indices: Uint32Array }>
 ): Promise<ArrayBuffer> {
     const proxy = getProxy()
     return proxy.exportURDF(
@@ -39,7 +40,8 @@ export async function exportURDFInWorker(
         linkRestInverseMap,
         unitScale,
         onProgress ? Comlink.proxy(onProgress) : undefined,
-        extraFiles
+        extraFiles,
+        collisionMeshMap
     )
 }
 

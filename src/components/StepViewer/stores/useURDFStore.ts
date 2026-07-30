@@ -13,8 +13,15 @@ import type {
   JointWizardStep,
   LoopClosure,
   LoopConstraintType,
-  ExportFormat
+  ExportFormat,
+  CollisionConfig,
+  CollisionShape,
+  CollisionConflict,
+  CollisionMode
 } from '../types'
+import { ForwardKinematics } from '../core/ForwardKinematics'
+import { fitLinkShape, separateShapes, type LinkGeometryInput } from '../core/CollisionSimplifier'
+import { useStepViewerStore } from './useStepViewerStore'
 
 const BASE_LINK_ID = 'link_base'
 
@@ -69,6 +76,25 @@ export const useURDFStore = defineStore('urdf', () => {
   const baseLinkOrigin = ref<[number, number, number] | null>(null)
   const baseLinkRPY = ref<[number, number, number] | null>(null)
   const totalMass = ref(10)
+
+  const collisionConfig = ref<CollisionConfig>({
+    mode: 'auto',
+    margin: 0.5,
+    sweepCheck: true,
+    sweepSamples: 5,
+    minScale: 0.35,
+    visible: true,
+    useForExport: true
+  })
+  const collisionShapes = ref<CollisionShape[]>([])
+  const collisionConflicts = ref<CollisionConflict[]>([])
+  const collisionOverrides = ref<Record<string, CollisionMode>>({})
+
+  const collisionShapeMap = computed(() => {
+    const map = new Map<string, CollisionShape>()
+    collisionShapes.value.forEach(s => map.set(s.linkId, s))
+    return map
+  })
 
   const linkMap = computed(() => {
     const map = new Map<string, URDFLink>()
@@ -394,6 +420,155 @@ export const useURDFStore = defineStore('urdf', () => {
     _nextLoopId = imported.loops.length + 1
   }
 
+  function jointWorldAxes(): Map<string, [number, number, number][]> {
+    const fk = new ForwardKinematics()
+    fk.setRobot(robot.value)
+    fk.compute()
+
+    const result = new Map<string, [number, number, number][]>()
+    const push = (linkId: string, axis: [number, number, number]) => {
+      const list = result.get(linkId) || []
+      list.push(axis)
+      result.set(linkId, list)
+    }
+
+    for (const joint of robot.value.joints) {
+      const wm = fk.getJointWorldMatrix(joint.id)
+      if (!wm) continue
+      const rot = new THREE.Matrix4().extractRotation(wm)
+      const axis = new THREE.Vector3(...joint.axis).applyMatrix4(rot).normalize()
+      const tuple: [number, number, number] = [axis.x, axis.y, axis.z]
+      push(joint.parentLinkId, tuple)
+      push(joint.childLinkId, tuple)
+    }
+    return result
+  }
+
+  function buildDeltaConfigs(samples: number): Map<string, THREE.Matrix4>[] {
+    const configs: Map<string, THREE.Matrix4>[] = [new Map()]
+    if (samples < 2) return configs
+
+    const fk = new ForwardKinematics()
+    const saved = robot.value.joints.map(j => ({ v: j.currentValue, b: j.ballValue }))
+
+    const restInverses = new Map<string, THREE.Matrix4>()
+    fk.setRobot(robot.value)
+    for (const link of robot.value.links) {
+      const rest = fk.getLinkRestTransform(link.id)
+      if (rest) restInverses.set(link.id, rest.clone().invert())
+    }
+
+    const capture = (): Map<string, THREE.Matrix4> => {
+      fk.setRobot(robot.value)
+      const world = fk.compute()
+      const map = new Map<string, THREE.Matrix4>()
+      for (const [linkId, m] of world) {
+        const inv = restInverses.get(linkId)
+        if (!inv) continue
+        map.set(linkId, new THREE.Matrix4().multiplyMatrices(m, inv))
+      }
+      return map
+    }
+
+    for (const joint of robot.value.joints) {
+      const range = jointSampleRange(joint)
+      if (range.length === 0) continue
+
+      robot.value.joints.forEach(j => { j.currentValue = 0; if (j.ballValue) j.ballValue = [0, 0, 0] })
+
+      for (const value of pickSamples(range, samples)) {
+        if (joint.type === 'ball') {
+          joint.ballValue = [value, value, value]
+        } else {
+          joint.currentValue = value
+        }
+        configs.push(capture())
+      }
+    }
+
+    robot.value.joints.forEach((j, i) => {
+      j.currentValue = saved[i].v
+      if (saved[i].b) j.ballValue = saved[i].b
+    })
+    return configs
+  }
+
+  function jointSampleRange(joint: URDFJoint): [number, number] | [] {
+    switch (joint.type) {
+      case 'revolute':
+      case 'prismatic':
+      case 'ball':
+        return [joint.limits.lower, joint.limits.upper]
+      case 'continuous':
+        return [-Math.PI, Math.PI]
+      default:
+        return []
+    }
+  }
+
+  function pickSamples(range: [number, number], count: number): number[] {
+    const [lo, hi] = range
+    if (!(hi > lo)) return [lo]
+    const out: number[] = []
+    for (let i = 0; i < count; i++) {
+      out.push(lo + ((hi - lo) * i) / (count - 1))
+    }
+    return out
+  }
+
+  function buildLinkInputs(): LinkGeometryInput[] {
+    const stepStore = useStepViewerStore()
+    const axes = jointWorldAxes()
+    const inputs: LinkGeometryInput[] = []
+
+    for (const link of robot.value.links) {
+      if (link.solidIds.length === 0) continue
+      const solids: LinkGeometryInput['solids'] = []
+      for (const solidId of link.solidIds) {
+        const data = stepStore.solidMap.get(solidId)?.serializedData
+        if (data) solids.push({ positions: data.positions, indices: data.indices })
+      }
+      if (solids.length === 0) continue
+      inputs.push({
+        linkId: link.id,
+        solids,
+        preferredAxes: axes.get(link.id) || [],
+        mode: collisionOverrides.value[link.id] || collisionConfig.value.mode
+      })
+    }
+    return inputs
+  }
+
+  function generateCollisionShapes(): { count: number; conflicts: CollisionConflict[] } {
+    const inputs = buildLinkInputs()
+    const shapes: CollisionShape[] = []
+    for (const input of inputs) {
+      const shape = fitLinkShape(input)
+      if (shape) shapes.push(shape)
+    }
+
+    const cfg = collisionConfig.value
+    const deltaConfigs = cfg.sweepCheck ? buildDeltaConfigs(cfg.sweepSamples) : [new Map<string, THREE.Matrix4>()]
+    const result = separateShapes(shapes, {
+      margin: cfg.margin,
+      minScale: cfg.minScale,
+      deltaConfigs
+    })
+
+    collisionShapes.value = result.shapes
+    collisionConflicts.value = result.conflicts
+    return { count: result.shapes.length, conflicts: result.conflicts }
+  }
+
+  function setLinkCollisionMode(linkId: string, mode: CollisionMode): void {
+    collisionOverrides.value = { ...collisionOverrides.value, [linkId]: mode }
+  }
+
+  function clearCollisionShapes(): void {
+    collisionShapes.value = []
+    collisionConflicts.value = []
+  }
+
   function findOrphanLinks(): string[] {
     const childIds = new Set(robot.value.joints.map(j => j.childLinkId))
     return robot.value.links
@@ -425,6 +600,9 @@ export const useURDFStore = defineStore('urdf', () => {
     linkWorldTransforms.value = new Map()
     exporting.value = false
     exportProgress.value = ''
+    collisionShapes.value = []
+    collisionConflicts.value = []
+    collisionOverrides.value = {}
     _nextLinkId = 1
     _nextJointId = 1
     _nextLoopId = 1
@@ -452,6 +630,12 @@ export const useURDFStore = defineStore('urdf', () => {
     totalMass,
     exportFormat,
     loopAnchorPickId,
+
+    collisionConfig,
+    collisionShapes,
+    collisionConflicts,
+    collisionOverrides,
+    collisionShapeMap,
 
     linkMap,
     jointMap,
@@ -492,6 +676,10 @@ export const useURDFStore = defineStore('urdf', () => {
     stopBindingMode,
 
     findOrphanLinks,
+
+    generateCollisionShapes,
+    setLinkCollisionMode,
+    clearCollisionShapes,
 
     importRobot,
     clearAll

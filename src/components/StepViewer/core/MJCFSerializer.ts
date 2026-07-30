@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { URDFRobot, URDFJoint, URDFLink } from '../types'
+import type { URDFRobot, URDFJoint, URDFLink, CollisionShape } from '../types'
 import { rotateInertiaTensor } from './ZUpTransform'
 
 export interface MJCFSerializeOptions {
@@ -10,6 +10,7 @@ export interface MJCFSerializeOptions {
   meshDir?: string
   withActuators?: boolean
   meshLinkNames?: Set<string>
+  collisionShapes?: Map<string, CollisionShape>
 }
 
 export function serializeMJCF(robot: URDFRobot, options?: MJCFSerializeOptions): string {
@@ -44,6 +45,14 @@ export function serializeMJCF(robot: URDFRobot, options?: MJCFSerializeOptions):
   out.push('  <asset>')
   for (const name of meshLinks) {
     out.push(`    <mesh name="${escapeXml(name)}" file="${escapeXml(name)}.stl"/>`)
+  }
+  if (options?.collisionShapes) {
+    for (const link of robot.links) {
+      const shape = options.collisionShapes.get(link.id)
+      if (shape?.type === 'convex') {
+        out.push(`    <mesh name="${escapeXml(link.name)}_collision" file="${escapeXml(link.name)}_collision.stl"/>`)
+      }
+    }
   }
   out.push('  </asset>')
 
@@ -86,8 +95,19 @@ export function serializeMJCF(robot: URDFRobot, options?: MJCFSerializeOptions):
 
     lines.push(...serializeInertial(link, pad + '  '))
 
+    const collision = options?.collisionShapes?.get(link.id)
+
     if (meshLinks.has(link.name)) {
-      lines.push(`${pad}  <geom type="mesh" mesh="${escapeXml(link.name)}" rgba="0.75 0.78 0.8 1"/>`)
+      const visualAttrs = collision
+        ? ' contype="0" conaffinity="0" group="2"'
+        : ''
+      lines.push(
+        `${pad}  <geom type="mesh" mesh="${escapeXml(link.name)}" rgba="0.75 0.78 0.8 1"${visualAttrs}/>`
+      )
+    }
+
+    if (collision) {
+      lines.push(`${pad}  ${collisionGeom(collision, link)}`)
     }
 
     for (const joint of childrenOf.get(link.id) || []) {
@@ -125,6 +145,44 @@ export function serializeMJCF(robot: URDFRobot, options?: MJCFSerializeOptions):
       xyz: [xyz[0] * s, xyz[1] * s, xyz[2] * s],
       quat: [q.w, q.x, q.y, q.z]
     }
+  }
+
+  function collisionGeom(shape: CollisionShape, link: URDFLink): string {
+    const name = `${escapeXml(link.name)}_col`
+
+    if (shape.type === 'convex') {
+      return `<geom name="${name}" type="mesh" mesh="${escapeXml(link.name)}_collision" group="3" rgba="0.2 0.8 0.4 0.4"/>`
+    }
+
+    const restInverse = options?.linkRestInverses?.get(link.id)
+    const m = new THREE.Matrix4().makeRotationFromQuaternion(
+      new THREE.Quaternion(shape.quat[0], shape.quat[1], shape.quat[2], shape.quat[3])
+    )
+    m.setPosition(shape.center[0], shape.center[1], shape.center[2])
+    if (restInverse) m.premultiply(restInverse)
+
+    const p = new THREE.Vector3().setFromMatrixPosition(m)
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().extractRotation(m))
+    const pos = fmtVec3([p.x * s, p.y * s, p.z * s])
+    const quat = fmtVec4([q.w, q.x, q.y, q.z])
+
+    let type = 'box'
+    let size = fmtVec3([
+      shape.halfExtents[0] * s,
+      shape.halfExtents[1] * s,
+      shape.halfExtents[2] * s
+    ])
+
+    if (shape.type === 'sphere') {
+      type = 'sphere'
+      size = fmtNum(shape.radius * s)
+    } else if (shape.type === 'cylinder') {
+      type = 'cylinder'
+      size = `${fmtNum(shape.radius * s)} ${fmtNum((shape.height / 2) * s)}`
+    }
+
+    return `<geom name="${name}" type="${type}" size="${size}" pos="${pos}" quat="${quat}" ` +
+      `group="3" rgba="0.2 0.8 0.4 0.4"/>`
   }
 
   function serializeInertial(link: URDFLink, pad: string): string[] {

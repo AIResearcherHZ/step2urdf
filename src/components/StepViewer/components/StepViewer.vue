@@ -60,7 +60,9 @@ v-if="store.hasModel"
     <JointWizard
 ref="jointWizardRef" @created="urdfScene.handleJointCreated"
       @start-edge-pick="urdfScene.startEdgePickMode" @stop-edge-pick="urdfScene.stopEdgePickMode"
-      @flip-axis="urdfScene.flipAxis" />
+      @flip-axis="urdfScene.flipAxis" @preview-axis="urdfScene.previewAxisCandidate"
+      @show-gizmo="urdfScene.showAxisGizmo" @cycle-candidate="urdfScene.cycleAxisCandidate"
+      @toggle-xray="urdfScene.setXray" />
 
     <div class="status-bar">
       <template v-if="store.hasModel">
@@ -274,8 +276,10 @@ async function initViewer(): Promise<void> {
 
     if (urdfScene.isEdgePickMode() && features.length > 0) {
       const f = features[0]
+      const isAxisFace = f.type === FeatureType.CYLINDER || f.type === FeatureType.CONE
+        || f.type === FeatureType.ARC || f.type === FeatureType.TORUS
       const isAccepted = f.edgeCurveType === 'circle' || f.edgeCurveType === 'arc'
-        || f.edgeCurveType === 'line' || f.type === FeatureType.CYLINDER
+        || f.edgeCurveType === 'line' || isAxisFace
 
       if (!isAccepted) {
         if (f.edgeCurveType === 'bspline' || f.edgeCurveType === 'bezier') {
@@ -351,6 +355,10 @@ async function initViewer(): Promise<void> {
     urdfScene.handleHoverSnap(feature)
   })
 
+  selectionManager.onAxisCandidates((info) => {
+    jointWizardRef.value?.setCandidateInfo(info)
+  })
+
   sceneManager.addRenderCallback(() => {
     if (sceneManager) {
       frameDrawCalls.value = sceneManager.frameDrawCalls
@@ -388,6 +396,13 @@ async function initViewer(): Promise<void> {
 
 function handleViewShortcut(e: KeyboardEvent): void {
   const tag = (e.target as HTMLElement)?.tagName
+
+  if (e.key === 'Tab' && urdfScene.isEdgePickMode()) {
+    e.preventDefault()
+    urdfScene.cycleAxisCandidate(e.shiftKey ? -1 : 1)
+    return
+  }
+
   if (tag === 'INPUT' || tag === 'TEXTAREA') return
   if (!sceneManager) return
 
@@ -554,6 +569,7 @@ function handleOpacityChange(percent: number): void {
   const opacity = percent / 100
   store.setGlobalOpacity(opacity)
   store.setTransparent(opacity < 1)
+  urdfScene.syncOpacityBaseline(opacity)
   selectionManager?.setOpacity(null, opacity)
   sceneManager?.markDirty()
 }
@@ -684,6 +700,7 @@ function applyGlobalRotation(m: THREE.Matrix4): boolean {
   handleClearSelection()
   lineMeasurementTool?.clearAll()
   store.clearLineMeasurements()
+  urdfStore.clearCollisionShapes()
   urdfScene.disposeModules()
   sceneManager.clearModels()
 
@@ -758,6 +775,18 @@ watch(
 watch(() => urdfStore.showFrames, (val) => {
   urdfScene.setFrameVisible(val)
   sceneManager?.markDirty()
+})
+
+watch(
+  () => urdfStore.collisionShapes,
+  () => {
+    urdfScene.refreshCollisionVisual()
+  },
+  { deep: true }
+)
+
+watch(() => urdfStore.collisionConfig.visible, (val) => {
+  urdfScene.setCollisionVisible(val)
 })
 
 watch(

@@ -34,6 +34,21 @@
 
     <div class="section-divider" />
 
+    <!-- ===== 碰撞体简化 ===== -->
+    <div class="panel-section collision-section">
+      <div class="section-header">
+        <span class="section-title">碰撞体简化</span>
+        <el-tag v-if="urdfStore.collisionShapes.length" size="small" type="success">
+          {{ urdfStore.collisionShapes.length }}
+        </el-tag>
+      </div>
+      <div class="section-body">
+        <CollisionModule />
+      </div>
+    </div>
+
+    <div class="section-divider" />
+
     <!-- ===== 下部：关节控制打开按钮 ===== -->
     <div class="fk-launch-bar">
       <el-button type="primary" plain @click="$emit('toggleFKPanel')">
@@ -52,6 +67,7 @@ import { useURDFStore } from '../../stores/useURDFStore'
 import URDFJointProperties from './URDFJointProperties.vue'
 import URDFLinkProperties from './URDFLinkProperties.vue'
 import LoopsModule from './LoopsModule.vue'
+import CollisionModule from './CollisionModule.vue'
 
 defineEmits<{
   (e: 'toggleFKPanel'): void
@@ -98,6 +114,11 @@ const contextTitle = computed(() => {
 
 .loops-section {
   max-height: 40%;
+  flex-shrink: 0;
+}
+
+.collision-section {
+  max-height: 46%;
   flex-shrink: 0;
 }
 

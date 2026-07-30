@@ -3,6 +3,7 @@ import { ElMessage } from 'element-plus'
 import { FrameVisualizer } from '../../core/FrameVisualizer'
 import { ForwardKinematics } from '../../core/ForwardKinematics'
 import { JointSnapVisualizer } from '../../core/JointSnapVisualizer'
+import { CollisionVisualizer } from '../../core/CollisionVisualizer'
 import { computeRelativeTransform } from '../../core/useKinematicsWorker'
 import { exportURDFInWorker, disposeExportWorker } from '../../core/useExportWorker'
 import { serializeURDF } from '../../core/URDFSerializer'
@@ -12,6 +13,8 @@ import { useStepViewerStore } from '../../stores/useStepViewerStore'
 import { useURDFStore } from '../../stores/useURDFStore'
 import type { SceneManager, SelectionManager } from '../../core'
 import type { FrameAxis } from '../../core/AxisFrame'
+import type { AxisCandidate } from '../../core/AxisCandidate'
+import { FeatureType } from '../../types'
 import type { GeometryFeature, SnapData } from '../../types'
 
 interface UseURDFSceneDeps {
@@ -26,9 +29,15 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
   let frameVisualizer: FrameVisualizer | null = null
   let forwardKinematics: ForwardKinematics | null = null
   let snapVisualizer: JointSnapVisualizer | null = null
+  let collisionVisualizer: CollisionVisualizer | null = null
   let baseAxisLength = 0.05
   let edgePickMode = false
   let currentSnapData: SnapData | null = null
+  let modelDiagonal = 1
+  let xrayActive = false
+  let savedOpacity = 1
+  const XRAY_OPACITY = 0.15
+  let appliedGizmo: { position: [number, number, number]; direction: [number, number, number] } | null = null
 
   function getFK(): ForwardKinematics | null { return forwardKinematics }
   function isEdgePickMode(): boolean { return edgePickMode }
@@ -42,6 +51,7 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     const box = new THREE.Box3().setFromObject(sm.modelGroup)
     const size = box.getSize(new THREE.Vector3())
     const maxDim = Math.max(size.x, size.y, size.z)
+    modelDiagonal = size.length() || maxDim || 1
     baseAxisLength = maxDim > 0 ? maxDim * 0.05 : 0.05
     const axisLength = baseAxisLength * urdfStore.axisHelperScale
 
@@ -54,6 +64,10 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
 
     snapVisualizer?.dispose()
     snapVisualizer = new JointSnapVisualizer({ scene: sm.scene, axisLength })
+
+    collisionVisualizer?.dispose()
+    collisionVisualizer = new CollisionVisualizer({ scene: sm.scene })
+    collisionVisualizer.setVisible(urdfStore.collisionConfig.visible)
 
     forwardKinematics.setRobot(urdfStore.robot)
     frameVisualizer.setVisible(urdfStore.showFrames)
@@ -79,7 +93,40 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
       frameVisualizer.showBaseFrame(urdfStore.baseLinkOrigin, urdfStore.baseLinkRPY ?? undefined)
     }
 
+    if (collisionVisualizer && urdfStore.collisionShapes.length > 0) {
+      collisionVisualizer.updateTransforms(urdfStore.collisionShapes, buildLinkDeltas(transforms))
+    }
+
     sm.markDirty()
+  }
+
+  function buildLinkDeltas(transforms: Map<string, THREE.Matrix4>): Map<string, THREE.Matrix4> {
+    const deltas = new Map<string, THREE.Matrix4>()
+    if (!forwardKinematics) return deltas
+    for (const [linkId, world] of transforms) {
+      const rest = forwardKinematics.getLinkRestTransform(linkId)
+      if (!rest) continue
+      deltas.set(linkId, new THREE.Matrix4().multiplyMatrices(world, rest.invert()))
+    }
+    return deltas
+  }
+
+  function refreshCollisionVisual(): void {
+    if (!collisionVisualizer) return
+    collisionVisualizer.setShapes(urdfStore.collisionShapes)
+    collisionVisualizer.setVisible(urdfStore.collisionConfig.visible)
+    if (forwardKinematics) {
+      collisionVisualizer.updateTransforms(
+        urdfStore.collisionShapes,
+        buildLinkDeltas(urdfStore.linkWorldTransforms)
+      )
+    }
+    deps.getSceneManager()?.markDirty()
+  }
+
+  function setCollisionVisible(visible: boolean): void {
+    collisionVisualizer?.setVisible(visible)
+    deps.getSceneManager()?.markDirty()
   }
 
   async function fillMissingLinkInertials(): Promise<number> {
@@ -127,8 +174,11 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     frameVisualizer = null
     snapVisualizer?.dispose()
     snapVisualizer = null
+    collisionVisualizer?.dispose()
+    collisionVisualizer = null
     forwardKinematics = null
     currentSnapData = null
+    appliedGizmo = null
     edgePickMode = false
     disposeExportWorker()
   }
@@ -153,42 +203,164 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     }
 
     if (!feature) {
-      snapVisualizer.hide()
+      restoreAppliedGizmo()
       currentSnapData = null
       sm?.markDirty()
       return
     }
 
-    if (feature.edgeCurveType === 'circle' || feature.edgeCurveType === 'arc') {
-      if (feature.center && (feature.axis || feature.normal)) {
-        const pos = feature.center
-        const norm = (feature.axis || feature.normal)!
-        snapVisualizer.updateSnap(pos, norm)
-        currentSnapData = {
-          position: [pos.x, pos.y, pos.z],
-          normal: [norm.x, norm.y, norm.z],
-          featureType: feature.edgeCurveType as 'circle' | 'arc',
-          frame: snapVisualizer.getCurrentFrame()
-        }
-        sm?.markDirty()
-      }
-    } else if (feature.edgeCurveType === 'line') {
-      if (feature.startPoint && feature.endPoint) {
-        const pos = feature.startPoint
-        const dir = feature.endPoint.clone().sub(feature.startPoint).normalize()
-        snapVisualizer.updateSnap(pos, dir)
-        currentSnapData = {
-          position: [pos.x, pos.y, pos.z],
-          normal: [dir.x, dir.y, dir.z],
-          featureType: 'line',
-          frame: snapVisualizer.getCurrentFrame()
-        }
-        sm?.markDirty()
-      }
-    } else {
-      snapVisualizer.hide()
+    const resolved = resolveSnapFromFeature(feature)
+    if (!resolved) {
+      restoreAppliedGizmo()
       currentSnapData = null
+      sm?.markDirty()
+      return
     }
+
+    snapVisualizer.updateSnap(resolved.position, resolved.direction)
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
+    currentSnapData = {
+      position: [resolved.position.x, resolved.position.y, resolved.position.z],
+      normal: [resolved.direction.x, resolved.direction.y, resolved.direction.z],
+      featureType: resolved.featureType,
+      frame: snapVisualizer.getCurrentFrame()
+    }
+    sm?.markDirty()
+  }
+
+  function resolveSnapFromFeature(feature: GeometryFeature): {
+    position: THREE.Vector3
+    direction: THREE.Vector3
+    featureType: 'circle' | 'arc' | 'line'
+  } | null {
+    const curve = feature.edgeCurveType
+
+    if (curve === 'line') {
+      if (!feature.startPoint || !feature.endPoint) return null
+      return {
+        position: feature.startPoint.clone(),
+        direction: feature.endPoint.clone().sub(feature.startPoint).normalize(),
+        featureType: 'line'
+      }
+    }
+
+    if (curve === 'circle' || curve === 'arc') {
+      const axis = feature.axis || feature.normal
+      if (!feature.center || !axis) return null
+      return {
+        position: feature.center.clone(),
+        direction: axis.clone().normalize(),
+        featureType: curve
+      }
+    }
+
+    if (
+      feature.type === FeatureType.CYLINDER
+      || feature.type === FeatureType.CONE
+      || feature.type === FeatureType.ARC
+      || feature.type === FeatureType.TORUS
+    ) {
+      const axis = feature.axis || feature.normal
+      if (!feature.center || !axis) return null
+      return {
+        position: feature.center.clone(),
+        direction: axis.clone().normalize(),
+        featureType: 'circle'
+      }
+    }
+
+    return null
+  }
+
+  function restoreAppliedGizmo(): void {
+    if (!snapVisualizer) return
+    if (!appliedGizmo) {
+      snapVisualizer.hide()
+      return
+    }
+    snapVisualizer.updateSnap(
+      new THREE.Vector3(...appliedGizmo.position),
+      new THREE.Vector3(...appliedGizmo.direction)
+    )
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
+  }
+
+  function previewAxisCandidate(candidate: AxisCandidate | null, t?: number): void {
+    const sm = deps.getSceneManager()
+    if (!snapVisualizer) return
+
+    if (!candidate) {
+      restoreAppliedGizmo()
+      sm?.markDirty()
+      return
+    }
+
+    const offset = t ?? candidate.originT
+    const pos = new THREE.Vector3(
+      candidate.basePoint[0] + candidate.dir[0] * offset,
+      candidate.basePoint[1] + candidate.dir[1] * offset,
+      candidate.basePoint[2] + candidate.dir[2] * offset
+    )
+    const dir = new THREE.Vector3(candidate.dir[0], candidate.dir[1], candidate.dir[2])
+
+    snapVisualizer.updateSnap(pos, dir)
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
+    sm?.markDirty()
+  }
+
+  function showAxisGizmo(
+    position: [number, number, number],
+    direction: [number, number, number]
+  ): void {
+    if (!snapVisualizer) return
+    appliedGizmo = { position: [...position], direction: [...direction] }
+    snapVisualizer.updateSnap(
+      new THREE.Vector3(position[0], position[1], position[2]),
+      new THREE.Vector3(direction[0], direction[1], direction[2])
+    )
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
+    deps.getSceneManager()?.markDirty()
+  }
+
+  function hideAxisGizmo(): void {
+    appliedGizmo = null
+    snapVisualizer?.hide()
+    deps.getSceneManager()?.markDirty()
+  }
+
+  function cycleAxisCandidate(step = 1): void {
+    if (!edgePickMode) return
+    deps.getSelectionManager()?.cycleAxisCandidate(step)
+  }
+
+  function setXray(active: boolean): void {
+    const sm = deps.getSelectionManager()
+
+    if (active) {
+      if (!xrayActive) savedOpacity = store.globalOpacity
+      xrayActive = true
+      const target = Math.min(savedOpacity, XRAY_OPACITY)
+      store.setGlobalOpacity(target)
+      store.setTransparent(target < 1)
+      sm?.setOpacity(null, target)
+    } else {
+      if (!xrayActive) return
+      xrayActive = false
+      store.setGlobalOpacity(savedOpacity)
+      store.setTransparent(savedOpacity < 1)
+      sm?.setOpacity(null, savedOpacity)
+    }
+
+    deps.getSceneManager()?.markDirty()
+  }
+
+  function syncOpacityBaseline(opacity: number): void {
+    if (!xrayActive) return
+    savedOpacity = opacity
+  }
+
+  function isXrayActive(): boolean {
+    return xrayActive
   }
 
   function flipAxis(axis: FrameAxis): void {
@@ -222,8 +394,10 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
   function stopEdgePickMode(): void {
     edgePickMode = false
     urdfStore.edgePickEditJointId = null
+    appliedGizmo = null
     snapVisualizer?.hide()
     currentSnapData = null
+    if (xrayActive) setXray(false)
     deps.getSelectionManager()?.setGranularityMode('solid')
     deps.getSceneManager()?.markDirty()
   }
@@ -261,6 +435,7 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
 
   function handleJointCreated(): void {
     urdfStore.showFrames = true
+    appliedGizmo = null
     snapVisualizer?.hide()
     currentSnapData = null
     updateFKAndFrames()
@@ -308,11 +483,17 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
       }
 
       const format = urdfStore.exportFormat
+      const useCollision = urdfStore.collisionConfig.useForExport && urdfStore.collisionShapes.length > 0
+      const collisionShapeMap = useCollision
+        ? new Map(urdfStore.collisionShapes.map(s => [s.linkId, s]))
+        : undefined
+
       const serializeOptions = {
         linkRestInverses,
         unitScale: 0.001,
         basePoseInverse: basePoseInverseForExport,
-        baseLinkId: urdfStore.BASE_LINK_ID
+        baseLinkId: urdfStore.BASE_LINK_ID,
+        collisionShapes: collisionShapeMap
       }
 
       const urdfXml = format === 'mjcf' ? '' : serializeURDF(urdfStore.robot, serializeOptions)
@@ -343,13 +524,27 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         })
       }
 
+      const collisionMeshMap: Record<string, { positions: Float32Array; indices: Uint32Array }> = {}
+      if (collisionShapeMap) {
+        for (const link of urdfStore.robot.links) {
+          const shape = collisionShapeMap.get(link.id)
+          if (shape?.type === 'convex' && shape.hull) {
+            collisionMeshMap[link.name] = {
+              positions: shape.hull.positions,
+              indices: shape.hull.indices
+            }
+          }
+        }
+      }
+
       const zipBuffer = await exportURDFInWorker(
         urdfXml,
         linkSolidMap,
         linkRestInverseMap,
         0.001,
         (stage) => { urdfStore.exportProgress = stage },
-        extraFiles
+        extraFiles,
+        collisionMeshMap
       )
 
       const blob = new Blob([zipBuffer], { type: 'application/zip' })
@@ -384,6 +579,13 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     setFrameVisible,
     setAxisLength,
     handleHoverSnap,
+    previewAxisCandidate,
+    showAxisGizmo,
+    hideAxisGizmo,
+    cycleAxisCandidate,
+    setXray,
+    syncOpacityBaseline,
+    isXrayActive,
     flipAxis,
     handleBindingClick,
     startEdgePickMode,
@@ -391,5 +593,7 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     applyPickedEdgeToExistingJoint,
     handleJointCreated,
     handleExportURDF,
+    refreshCollisionVisual,
+    setCollisionVisible,
   }
 }

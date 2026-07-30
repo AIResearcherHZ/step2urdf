@@ -2,7 +2,7 @@
  * URDF XML 序列化与反序列化
  */
 
-import type { URDFRobot, URDFLink, URDFJoint, URDFOrigin, JointLimits, JointType, InertialParams } from '../types'
+import type { URDFRobot, URDFLink, URDFJoint, URDFOrigin, JointLimits, JointType, InertialParams, CollisionShape } from '../types'
 import * as THREE from 'three'
 import { rotateInertiaTensor } from './ZUpTransform'
 
@@ -25,6 +25,8 @@ export interface SerializeOptions {
   basePoseInverse?: THREE.Matrix4
   /** base_link 对应的 linkId，配合 basePoseInverse 使用 */
   baseLinkId?: string
+  /** linkId → 简化碰撞体，提供时 <collision> 使用基本几何而非完整网格 */
+  collisionShapes?: Map<string, CollisionShape>
 }
 
 /**
@@ -38,7 +40,7 @@ export function serializeURDF(robot: URDFRobot, options?: SerializeOptions): str
 
   for (const link of robot.links) {
     const restInverse = options?.linkRestInverses?.get(link.id)
-    lines.push(serializeLink(link, s, restInverse))
+    lines.push(serializeLink(link, s, restInverse, options?.collisionShapes?.get(link.id)))
   }
 
   for (const joint of robot.joints) {
@@ -65,7 +67,12 @@ export function serializeURDF(robot: URDFRobot, options?: SerializeOptions): str
   return lines.join('\n')
 }
 
-function serializeLink(link: URDFLink, unitScale: number, restInverse?: THREE.Matrix4): string {
+function serializeLink(
+  link: URDFLink,
+  unitScale: number,
+  restInverse?: THREE.Matrix4,
+  collision?: CollisionShape
+): string {
   const lines: string[] = []
   const s = unitScale
   lines.push(`  <link name="${escapeXml(link.name)}">`)
@@ -120,10 +127,20 @@ function serializeLink(link: URDFLink, unitScale: number, restInverse?: THREE.Ma
     lines.push('    </visual>')
 
     lines.push('    <collision>')
-    lines.push('      <origin xyz="0 0 0" rpy="0 0 0"/>')
-    lines.push('      <geometry>')
-    lines.push(`        <mesh filename="meshes/${escapeXml(link.name)}.stl"/>`)
-    lines.push('      </geometry>')
+    if (collision) {
+      const pose = collision.type === 'convex'
+        ? { xyz: [0, 0, 0] as [number, number, number], rpy: [0, 0, 0] as [number, number, number] }
+        : collisionPose(collision, s, restInverse)
+      lines.push(`      <origin xyz="${fmtVec3(pose.xyz)}" rpy="${fmtVec3(pose.rpy)}"/>`)
+      lines.push('      <geometry>')
+      lines.push(`        ${collisionGeometryTag(collision, link.name, s)}`)
+      lines.push('      </geometry>')
+    } else {
+      lines.push('      <origin xyz="0 0 0" rpy="0 0 0"/>')
+      lines.push('      <geometry>')
+      lines.push(`        <mesh filename="meshes/${escapeXml(link.name)}.stl"/>`)
+      lines.push('      </geometry>')
+    }
     lines.push('    </collision>')
   }
 
@@ -131,8 +148,7 @@ function serializeLink(link: URDFLink, unitScale: number, restInverse?: THREE.Ma
   return lines.join('\n')
 }
 
-function serializeJoint(joint: URDFJoint, robot: URDFRobot, unitScale: number, options?: SerializeOptions): string {
-  const lines: string[] = []
+function serializeJoint(joint: URDFJoint, robot: URDFRobot, unitScale: number, options?: SerializeOptions): string {  const lines: string[] = []
   const s = unitScale
   const parentLink = robot.links.find(l => l.id === joint.parentLinkId)
   const childLink = robot.links.find(l => l.id === joint.childLinkId)
@@ -331,6 +347,41 @@ export function deserializeURDF(xml: string): URDFRobot {
 }
 
 // ============ 辅助函数 ============
+
+export function collisionPose(
+  shape: CollisionShape,
+  unitScale: number,
+  restInverse?: THREE.Matrix4
+): { xyz: [number, number, number]; rpy: [number, number, number] } {
+  const m = new THREE.Matrix4().makeRotationFromQuaternion(
+    new THREE.Quaternion(shape.quat[0], shape.quat[1], shape.quat[2], shape.quat[3])
+  )
+  m.setPosition(shape.center[0], shape.center[1], shape.center[2])
+  if (restInverse) m.premultiply(restInverse)
+
+  const pos = new THREE.Vector3().setFromMatrixPosition(m)
+  return {
+    xyz: [pos.x * unitScale, pos.y * unitScale, pos.z * unitScale],
+    rpy: matrixToRPY(new THREE.Matrix4().extractRotation(m))
+  }
+}
+
+function collisionGeometryTag(shape: CollisionShape, linkName: string, s: number): string {
+  switch (shape.type) {
+    case 'box':
+      return `<box size="${fmtVec3([
+        shape.halfExtents[0] * 2 * s,
+        shape.halfExtents[1] * 2 * s,
+        shape.halfExtents[2] * 2 * s
+      ])}"/>`
+    case 'sphere':
+      return `<sphere radius="${fmtNum(shape.radius * s)}"/>`
+    case 'cylinder':
+      return `<cylinder radius="${fmtNum(shape.radius * s)}" length="${fmtNum(shape.height * s)}"/>`
+    default:
+      return `<mesh filename="meshes/${escapeXml(linkName)}_collision.stl"/>`
+  }
+}
 
 function parseInertial(el: Element): InertialParams {
   const massEl = el.querySelector('mass')

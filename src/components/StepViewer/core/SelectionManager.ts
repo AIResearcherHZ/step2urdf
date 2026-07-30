@@ -13,12 +13,30 @@
 
 import * as THREE from 'three'
 import type { ArcballControls } from 'three/examples/jsm/controls/ArcballControls.js'
+import { FeatureType } from '../types'
 import type {
   GeometryFeature,
   SolidObject,
   SelectionInfo,
   GranularityMode
 } from '../types'
+
+const AXIS_PICK_FACE_TYPES = new Set<FeatureType>([
+  FeatureType.CYLINDER,
+  FeatureType.CONE,
+  FeatureType.ARC,
+  FeatureType.TORUS
+])
+
+function projectPointOnAxis(
+  point: THREE.Vector3,
+  axisPoint: THREE.Vector3,
+  axisDir: THREE.Vector3
+): THREE.Vector3 {
+  const dir = axisDir.clone().normalize()
+  const d = point.clone().sub(axisPoint)
+  return axisPoint.clone().addScaledVector(dir, d.dot(dir))
+}
 
 /**
  * RAF 节流函数 - 与屏幕刷新率同步
@@ -80,6 +98,24 @@ export interface SelectionEvent {
 }
 
 /**
+ * 轴拾取候选（穿透模式下同一屏幕位置的多个可选特征）
+ */
+export interface AxisPickCandidate {
+  solid: SolidObject
+  feature: GeometryFeature
+  edgeIndex: number
+  kind: 'edge' | 'face'
+  distance: number
+  description: string
+}
+
+export interface AxisCandidateInfo {
+  index: number
+  total: number
+  description: string
+}
+
+/**
  * 选择管理器类
  */
 export class SelectionManager {
@@ -117,6 +153,12 @@ export class SelectionManager {
   private granularityMode: GranularityMode = 'solid'
   /** edge 拾取专用 raycaster（线段拾取需要独立 threshold） */
   private edgeRaycaster: THREE.Raycaster
+  /** 轴拾取穿透 raycaster（不启用 firstHitOnly，返回全部深度命中） */
+  private axisRaycaster: THREE.Raycaster
+  private axisCandidates: AxisPickCandidate[] = []
+  private axisCandidateIndex = 0
+  private lastAxisPickEvent: { clientX: number; clientY: number } | null = null
+  private onAxisCandidatesCallback?: (info: AxisCandidateInfo) => void
 
   // Hover 状态（纯 3D 视觉效果，不与树联动）
   private hoveredFeature: GeometryFeature | null = null
@@ -197,6 +239,9 @@ export class SelectionManager {
     // 边拾取专用 raycaster
     this.edgeRaycaster = new THREE.Raycaster()
     this.edgeRaycaster.params.Line = { threshold: 2 }
+
+    this.axisRaycaster = new THREE.Raycaster()
+    this.axisRaycaster.params.Line = { threshold: 2 }
 
     // 初始化 domRect 缓存
     this.updateCachedRect()
@@ -1446,6 +1491,9 @@ export class SelectionManager {
     this.hoveredMesh = null
     this.hoveredSolid = null
     this.hoveredBrepFaceIndex = -1
+    this.axisCandidates = []
+    this.axisCandidateIndex = 0
+    this.lastAxisPickEvent = null
 
     // 切换拓扑边线段可见性
     this.solids.forEach(s => {
@@ -1474,9 +1522,35 @@ export class SelectionManager {
    * 边模式下的 hover 检测
    */
   private performEdgeHoverCheck(event: MouseEvent): void {
-    const edgeHit = this.raycastEdges(event)
+    this.lastAxisPickEvent = { clientX: event.clientX, clientY: event.clientY }
+    this.axisCandidates = this.collectAxisPickCandidates(event)
+    this.axisCandidateIndex = 0
+    this.applyAxisCandidateHover()
+  }
 
-    if (!edgeHit) {
+  /**
+   * 在同一屏幕位置的候选特征之间循环（解决内部特征被遮挡无法拾取）
+   */
+  cycleAxisCandidate(step = 1): void {
+    if (this.granularityMode !== 'edge') return
+    if (this.axisCandidates.length <= 1) return
+    const total = this.axisCandidates.length
+    this.axisCandidateIndex = (this.axisCandidateIndex + step + total) % total
+    this.applyAxisCandidateHover(true)
+  }
+
+  onAxisCandidates(callback: (info: AxisCandidateInfo) => void): void {
+    this.onAxisCandidatesCallback = callback
+  }
+
+  getCurrentAxisCandidate(): AxisPickCandidate | null {
+    return this.axisCandidates[this.axisCandidateIndex] ?? null
+  }
+
+  private applyAxisCandidateHover(force = false): void {
+    const candidate = this.axisCandidates[this.axisCandidateIndex]
+
+    if (!candidate) {
       if (this.hoveredFeature) {
         this.clearHoverHighlight()
         this.hoveredFeature = null
@@ -1486,38 +1560,171 @@ export class SelectionManager {
         this.onHoverCallback?.(null)
         this.onRenderRequest?.()
       }
+      this.onAxisCandidatesCallback?.({ index: 0, total: 0, description: '' })
       return
     }
 
-    const { solid, feature, edgeIndex } = edgeHit
-    if (feature && feature === this.hoveredFeature) return
+    if (!force && candidate.feature === this.hoveredFeature) {
+      this.onAxisCandidatesCallback?.({
+        index: this.axisCandidateIndex,
+        total: this.axisCandidates.length,
+        description: candidate.description
+      })
+      return
+    }
 
     this.clearHoverHighlight()
 
-    if (feature && !this.selectedFeatures.has(feature.id)) {
-      // 高亮边缘线（hover 颜色）- 使用拓扑边线段 vertex color + 覆盖层
-      this.setTopologyEdgeColor(solid, edgeIndex, SelectionManager.EDGE_HOVER_COLOR)
-      this.createHoverEdgeOverlay(solid, edgeIndex)
+    if (candidate.kind === 'edge' && !this.selectedFeatures.has(candidate.feature.id)) {
+      this.setTopologyEdgeColor(candidate.solid, candidate.edgeIndex, SelectionManager.EDGE_HOVER_COLOR)
+      this.createHoverEdgeOverlay(candidate.solid, candidate.edgeIndex)
     }
 
-    this.hoveredFeature = feature
-    this.hoveredSolid = solid
-    this.hoveredBrepFaceIndex = edgeIndex
-    this.onHoverCallback?.(feature)
+    this.hoveredFeature = candidate.feature
+    this.hoveredSolid = candidate.solid
+    this.hoveredBrepFaceIndex = candidate.kind === 'edge' ? candidate.edgeIndex : -1
+    this.onHoverCallback?.(candidate.feature)
+    this.onAxisCandidatesCallback?.({
+      index: this.axisCandidateIndex,
+      total: this.axisCandidates.length,
+      description: candidate.description
+    })
     this.onRenderRequest?.()
+  }
+
+  /**
+   * 收集当前鼠标位置下的全部轴向候选（拓扑边 + 圆柱/圆锥面），按深度排序
+   */
+  private collectAxisPickCandidates(event: MouseEvent): AxisPickCandidate[] {
+    const rect = this.cachedRect || this.domElement.getBoundingClientRect()
+    const mx = ((event.clientX - rect.left) / rect.width) * 2 - 1
+    const my = -((event.clientY - rect.top) / rect.height) * 2 + 1
+    const ndc = new THREE.Vector2(mx, my)
+
+    const camDist = this.camera instanceof THREE.PerspectiveCamera
+      ? this.camera.position.length()
+      : 100
+    const lineThreshold = Math.max(0.5, Math.min(5, camDist * 0.005))
+
+    const results: AxisPickCandidate[] = []
+    const seen = new Set<string>()
+
+    this.edgeRaycaster.params.Line!.threshold = lineThreshold
+    this.edgeRaycaster.setFromCamera(ndc, this.camera)
+    const edgeHits = this.edgeRaycaster.intersectObjects(this.cachedTopologyEdges, false)
+
+    for (const hit of edgeHits) {
+      const resolved = this.resolveEdgeHit(hit)
+      if (!resolved) continue
+      if (seen.has(resolved.feature.id)) continue
+      const curve = resolved.feature.edgeCurveType
+      if (curve !== 'circle' && curve !== 'arc' && curve !== 'line') continue
+      seen.add(resolved.feature.id)
+      results.push({
+        solid: resolved.solid,
+        feature: resolved.feature,
+        edgeIndex: resolved.edgeIndex,
+        kind: 'edge',
+        distance: hit.distance,
+        description: this.describeCandidate(resolved.feature, 'edge')
+      })
+    }
+
+    this.axisRaycaster.setFromCamera(ndc, this.camera)
+    const faceHits = this.axisRaycaster.intersectObjects(this.cachedMeshes, false)
+
+    for (const hit of faceHits) {
+      const solid = this.findSolidFromIntersection(hit)
+      if (!solid) continue
+      const feature = this.findFeatureAtPoint(solid, hit)
+      if (!feature) continue
+      if (!AXIS_PICK_FACE_TYPES.has(feature.type)) continue
+      if (!feature.center) continue
+      const axis = feature.axis || feature.normal
+      if (!axis) continue
+
+      const projected = projectPointOnAxis(hit.point, feature.center, axis)
+      const key = `${feature.id}_face`
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      results.push({
+        solid,
+        feature: { ...feature, center: projected },
+        edgeIndex: -1,
+        kind: 'face',
+        distance: hit.distance,
+        description: this.describeCandidate(feature, 'face')
+      })
+    }
+
+    results.sort((a, b) => a.distance - b.distance)
+    return results
+  }
+
+  private describeCandidate(feature: GeometryFeature, kind: 'edge' | 'face'): string {
+    const d = feature.radius !== undefined ? `Ø${(feature.radius * 2).toFixed(2)}` : ''
+    if (kind === 'face') {
+      const t = feature.type === FeatureType.CONE ? '圆锥面' : '圆柱面'
+      return `${t} ${d}`.trim()
+    }
+    const curve = feature.edgeCurveType
+    const t = curve === 'circle' ? '整圆边' : curve === 'arc' ? '圆弧边' : '直线边'
+    return `${t} ${d}`.trim()
+  }
+
+  private resolveEdgeHit(hit: THREE.Intersection): {
+    solid: SolidObject
+    feature: GeometryFeature
+    edgeIndex: number
+  } | null {
+    const lineSegs = hit.object as THREE.LineSegments
+    const geo = lineSegs.geometry as THREE.BufferGeometry
+    const edgeIndexAttr = geo.getAttribute('edgeIndex')
+    if (!edgeIndexAttr || hit.index === undefined) return null
+
+    const edgeIndex = Math.floor(edgeIndexAttr.getX(hit.index))
+
+    for (const solid of this.solids) {
+      if (solid.topologyEdges !== lineSegs) continue
+
+      if (solid.topologyEdgeVertexRanges) {
+        const range = solid.topologyEdgeVertexRanges.get(edgeIndex)
+        if (range) {
+          const [start, count] = range
+          if (hit.index >= start && hit.index < start + count) {
+            const feature = this.edgeIndexMap.get(solid.id)?.get(edgeIndex)
+            if (feature) return { solid, feature, edgeIndex }
+          }
+        }
+        continue
+      }
+
+      const feature = this.edgeIndexMap.get(solid.id)?.get(edgeIndex)
+      if (feature) return { solid, feature, edgeIndex }
+    }
+
+    return null
   }
 
   /**
    * 边模式下的点击处理
    */
   private handleEdgeClick(event: MouseEvent): void {
-    const edgeHit = this.raycastEdges(event)
+    const moved = !this.lastAxisPickEvent
+      || Math.abs(this.lastAxisPickEvent.clientX - event.clientX) > 2
+      || Math.abs(this.lastAxisPickEvent.clientY - event.clientY) > 2
 
-    if (!edgeHit) return
+    if (moved) {
+      this.lastAxisPickEvent = { clientX: event.clientX, clientY: event.clientY }
+      this.axisCandidates = this.collectAxisPickCandidates(event)
+      this.axisCandidateIndex = 0
+    }
 
-    const { solid, feature } = edgeHit
+    const candidate = this.axisCandidates[this.axisCandidateIndex]
+    if (!candidate) return
 
-    if (!feature) return
+    const { solid, feature } = candidate
 
     const selectionInfo: SelectionInfo = {
       feature,
@@ -1564,66 +1771,6 @@ export class SelectionManager {
         selectedTreeNodeIds: this.getSelectedTreeNodeIds()
       })
     }
-  }
-
-  /**
-   * 射线检测拓扑边
-   */
-  private raycastEdges(event: MouseEvent): {
-    solid: SolidObject
-    feature: GeometryFeature
-    edgeIndex: number
-  } | null {
-    const rect = this.cachedRect || this.domElement.getBoundingClientRect()
-    const mx = ((event.clientX - rect.left) / rect.width) * 2 - 1
-    const my = -((event.clientY - rect.top) / rect.height) * 2 + 1
-
-    // 动态阈值：根据相机距离调整
-    const camDist = this.camera instanceof THREE.PerspectiveCamera
-      ? this.camera.position.length()
-      : 100
-    this.edgeRaycaster.params.Line!.threshold = Math.max(0.5, Math.min(5, camDist * 0.005))
-
-    this.edgeRaycaster.setFromCamera(new THREE.Vector2(mx, my), this.camera)
-    const intersects = this.edgeRaycaster.intersectObjects(this.cachedTopologyEdges, false)
-
-    if (intersects.length === 0) return null
-
-    const hit = intersects[0]
-    const lineSegs = hit.object as THREE.LineSegments
-    const geo = lineSegs.geometry as THREE.BufferGeometry
-    const edgeIndexAttr = geo.getAttribute('edgeIndex')
-
-    if (!edgeIndexAttr || hit.index === undefined) return null
-
-    const edgeIndex = Math.floor(edgeIndexAttr.getX(hit.index))
-
-    // 找到对应的 solid
-    for (const solid of this.solids) {
-      if (solid.topologyEdges === lineSegs ||
-        (solid.topologyEdges && solid.topologyEdges === lineSegs)) {
-        // 对于合并的拓扑边（InstancedMesh），需要通过顶点范围确定实例
-        if (solid.topologyEdgeVertexRanges) {
-          const range = solid.topologyEdgeVertexRanges.get(edgeIndex)
-          if (range) {
-            const [start, count] = range
-            if (hit.index >= start && hit.index < start + count) {
-              const edgeMap = this.edgeIndexMap.get(solid.id)
-              const feature = edgeMap?.get(edgeIndex)
-              if (feature) return { solid, feature, edgeIndex }
-            }
-          }
-          continue
-        }
-
-        // Regular Mesh 的拓扑边
-        const edgeMap = this.edgeIndexMap.get(solid.id)
-        const feature = edgeMap?.get(edgeIndex)
-        if (feature) return { solid, feature, edgeIndex }
-      }
-    }
-
-    return null
   }
 
   /**

@@ -356,6 +356,60 @@ export interface URDFRobot {
   loops: LoopClosure[]
 }
 
+export type CollisionShapeType = 'box' | 'cylinder' | 'sphere' | 'convex'
+
+export type CollisionMode = 'auto' | CollisionShapeType
+
+export const COLLISION_SHAPE_OPTIONS: { value: CollisionMode; label: string }[] = [
+  { value: 'auto', label: '自动（最贴合）' },
+  { value: 'box', label: 'Box（长方体）' },
+  { value: 'cylinder', label: 'Cylinder（圆柱）' },
+  { value: 'sphere', label: 'Sphere（球）' },
+  { value: 'convex', label: 'Convex（凸包网格）' }
+]
+
+export interface CollisionHull {
+  positions: Float32Array
+  indices: Uint32Array
+}
+
+export interface CollisionShape {
+  linkId: string
+  type: CollisionShapeType
+  center: [number, number, number]
+  quat: [number, number, number, number]
+  halfExtents: [number, number, number]
+  radius: number
+  height: number
+  hull?: CollisionHull
+  meshVolume: number
+  shapeVolume: number
+  originalHalfExtents: [number, number, number]
+  shrunk: boolean
+}
+
+export interface CollisionConflict {
+  linkAId: string
+  linkBId: string
+  depth: number
+}
+
+export interface CollisionConfig {
+  mode: CollisionMode
+  margin: number
+  sweepCheck: boolean
+  sweepSamples: number
+  minScale: number
+  visible: boolean
+  useForExport: boolean
+}
+
+export interface CollisionBuildResult {
+  shapes: CollisionShape[]
+  conflicts: CollisionConflict[]
+  iterations: number
+}
+
 export type JointWizardStep = 'select-links' | 'pick-edge' | 'adjust-origin' | 'set-type'
 
 export interface BindingModeState {

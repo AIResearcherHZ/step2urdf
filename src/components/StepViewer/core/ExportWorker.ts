@@ -102,7 +102,8 @@ const workerApi = {
     linkRestInverseMap: Record<string, number[]>,
     unitScale: number,
     onProgress?: (stage: string, percent: number) => void,
-    extraFiles?: Record<string, string>
+    extraFiles?: Record<string, string>,
+    collisionMeshMap?: Record<string, { positions: Float32Array; indices: Uint32Array }>
   ): Promise<ArrayBuffer> {
     const zip = new JSZip()
 
@@ -129,8 +130,26 @@ const workerApi = {
       zip.file(`meshes/${linkName}.stl`, stlBuffer)
     }
 
-    onProgress?.('正在打包 ZIP...', 90)
+    if (collisionMeshMap) {
+      for (const [linkName, hull] of Object.entries(collisionMeshMap)) {
+        const restInverse = linkRestInverseMap[linkName]
+        const hullData = {
+          name: linkName,
+          positions: hull.positions,
+          normals: new Float32Array(0),
+          indices: hull.indices,
+          faceGroups: [],
+          faceGeometries: [],
+          edgeGroups: [],
+          edgeGeometries: [],
+          edgePolylines: new Float32Array(0)
+        } as SerializedSolidData
+        const stl = generateBinarySTL([hullData], restInverse, unitScale)
+        zip.file(`meshes/${linkName}_collision.stl`, stl)
+      }
+    }
 
+    onProgress?.('正在打包 ZIP...', 90)
     const zipBuffer = await zip.generateAsync({
       type: 'arraybuffer',
       compression: 'DEFLATE',
