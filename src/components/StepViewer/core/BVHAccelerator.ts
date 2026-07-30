@@ -16,7 +16,6 @@ import {
     computeBoundsTree,
     disposeBoundsTree,
     acceleratedRaycast,
-    MeshBVH,
     type MeshBVHOptions
 } from 'three-mesh-bvh'
 

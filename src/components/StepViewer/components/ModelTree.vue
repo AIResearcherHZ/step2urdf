@@ -19,12 +19,14 @@
     </div>
 
     <div v-else class="tree-content" ref="treeContainerRef">
-      <el-tree-v2 ref="treeRef" :data="store.treeNodes" :props="treeProps" :height="treeHeight" :item-size="28"
+      <el-tree-v2
+ref="treeRef" :data="store.treeNodes" :props="treeProps" :height="treeHeight" :item-size="28"
         :indent="24" :default-expanded-keys="store.expandedTreeNodeIds" :highlight-current="true"
         :expand-on-click-node="false" :current-node-key="currentNodeKey" @node-click="handleNodeClick"
         @node-expand="handleNodeExpand" @node-collapse="handleNodeCollapse">
         <template #default="{ data }">
-          <div class="tree-node" :class="{
+          <div
+class="tree-node" :class="{
             'is-selected': store.selectedTreeNodeIdSet.has(data.id),
             'is-solid': data.type === 'solid',
             'is-edge': data.type === 'edge',
@@ -36,7 +38,8 @@
               ({{ data.children.length }})
             </span>
             <!-- Solid 节点显示/隐藏切换 -->
-            <span v-if="data.type === 'solid'" class="node-visibility" :class="{ 'is-hidden': !isSolidVisible(data) }"
+            <span
+v-if="data.type === 'solid'" class="node-visibility" :class="{ 'is-hidden': !isSolidVisible(data) }"
               @click.stop="handleToggleVisibility(data)" :title="isSolidVisible(data) ? '隐藏' : '显示'">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                 <template v-if="isSolidVisible(data)">
@@ -76,7 +79,6 @@ const treeContainerRef = ref<HTMLElement>()
 const treeHeight = ref(Math.max(200, Math.floor(window.innerHeight * 0.7 - 80)))
 let selectionFromTree = false
 
-
 const treeProps = {
   children: 'children',
   label: 'name',
@@ -105,7 +107,6 @@ function getNodeIcon(data: TreeNode): string {
     default: return '📄'
   }
 }
-
 
 function getEdgeTypeIcon(name: string): string {
   if (name.includes('线段') || name.includes('直线')) return '➖'

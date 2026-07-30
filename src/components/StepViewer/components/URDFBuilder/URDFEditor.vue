@@ -21,7 +21,8 @@
       </div>
 
       <div class="editor-body">
-        <vue-monaco-editor ref="monacoRef" v-model:value="urdfXml" language="xml" theme="vs-dark"
+        <vue-monaco-editor
+ref="monacoRef" v-model:value="urdfXml" language="xml" theme="vs-dark"
           :options="editorOptions" style="height: 100%" @mount="handleEditorMount" />
       </div>
 

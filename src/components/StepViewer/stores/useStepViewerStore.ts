@@ -4,10 +4,10 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed, markRaw } from 'vue'
+import * as THREE from 'three'
 import type {
   SolidObject,
   GeometryFeature,
-  SelectionInfo,
   UploadProgress,
   TreeNode,
 } from '../types'
@@ -25,6 +25,7 @@ export const useStepViewerStore = defineStore('stepViewer', () => {
 
   // 模型数据
   const solids = ref<SolidObject[]>([])
+  const modelRotationElements = ref<number[] | null>(null)
   const currentFileName = ref<string>('')
 
   // 结构树状态
@@ -139,6 +140,23 @@ export const useStepViewerStore = defineStore('stepViewer', () => {
     solids.value = newSolids
   }
 
+  function getModelRotation(): THREE.Matrix4 {
+    const m = new THREE.Matrix4()
+    if (modelRotationElements.value) m.fromArray(modelRotationElements.value)
+    return m
+  }
+
+  function setModelRotation(m: THREE.Matrix4): void {
+    modelRotationElements.value = m.toArray()
+  }
+
+  const isModelRotated = computed(() => {
+    const e = modelRotationElements.value
+    if (!e) return false
+    const identity = new THREE.Matrix4().toArray()
+    return e.some((v, i) => Math.abs(v - identity[i]) > 1e-12)
+  })
+
   /**
    * 设置结构树节点
    */
@@ -203,6 +221,7 @@ export const useStepViewerStore = defineStore('stepViewer', () => {
    */
   function clearModel(): void {
     solids.value = []
+    modelRotationElements.value = null
     currentFileName.value = ''
     selectedFeatures.value = []
     lineMeasurements.value = []
@@ -252,7 +271,6 @@ export const useStepViewerStore = defineStore('stepViewer', () => {
   function setLineMeasureActive(active: boolean): void {
     isLineMeasureActive.value = active
   }
-
 
   /**
    * 切换 Solid 显隐状态
@@ -341,10 +359,13 @@ export const useStepViewerStore = defineStore('stepViewer', () => {
     selectedSolidNames,
     solidMap,
     treeNodeCount,
+    isModelRotated,
 
     // 动作
     updateUploadProgress,
     setSolids,
+    getModelRotation,
+    setModelRotation,
     setFileName,
     setTreeNodes,
     selectTreeNode,

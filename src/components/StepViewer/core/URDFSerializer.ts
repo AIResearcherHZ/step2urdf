@@ -4,6 +4,7 @@
 
 import type { URDFRobot, URDFLink, URDFJoint, URDFOrigin, JointLimits, JointType, InertialParams } from '../types'
 import * as THREE from 'three'
+import { rotateInertiaTensor } from './ZUpTransform'
 
 /** 序列化选项 */
 export interface SerializeOptions {
@@ -84,6 +85,12 @@ function serializeLink(link: URDFLink, unitScale: number, restInverse?: THREE.Ma
     lines.push(`      <origin xyz="${fmtVec3(comScaled)}" rpy="0 0 0"/>`)
     // inertia 已转换到 link-local 轴、SI 单位 kg·m²，直接写入
     lines.push(`      <inertia ixx="${fmtNum(ixx)}" ixy="${fmtNum(ixy)}" ixz="${fmtNum(ixz)}" iyy="${fmtNum(iyy)}" iyz="${fmtNum(iyz)}" izz="${fmtNum(izz)}"/>`)
+    lines.push('    </inertial>')
+  } else {
+    lines.push('    <inertial>')
+    lines.push('      <mass value="0"/>')
+    lines.push('      <origin xyz="0 0 0" rpy="0 0 0"/>')
+    lines.push('      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>')
     lines.push('    </inertial>')
   }
 
@@ -299,46 +306,6 @@ function parseVec3(str: string): [number, number, number] {
 
 function fmtNum(n: number): string {
   return Number.isFinite(n) ? parseFloat(n.toFixed(8)).toString() : '0'
-}
-
-/**
- * 将惯性张量从世界坐标轴旋转到连杆局部坐标轴
- *
- * URDF 规范要求 <inertia> 值表达在与 link frame 对齐的轴下（当 <origin rpy="0 0 0"> 时）。
- * InertiaWorker 输出的张量是在 STEP 世界坐标轴下，须通过 I_local = R · I · Rᵀ 旋转。
- *
- * @param inertia  [ixx, ixy, ixz, iyy, iyz, izz]（世界坐标轴，kg·m²）
- * @param m        restInverse —— 含旋转部分 R（将世界向量映射到 link-local 向量）
- * @returns        [ixx, ixy, ixz, iyy, iyz, izz]（link-local 坐标轴，kg·m²）
- */
-function rotateInertiaTensor(
-  inertia: readonly [number, number, number, number, number, number],
-  m: THREE.Matrix4
-): [number, number, number, number, number, number] {
-  // Three.js Matrix4 按列存储：elements[col*4 + row]
-  // R[row][col] = e[col*4 + row]
-  const e = m.elements
-  const Rx = [e[0], e[4], e[8]]   // row 0 of rotation
-  const Ry = [e[1], e[5], e[9]]   // row 1
-  const Rz = [e[2], e[6], e[10]]  // row 2
-
-  const [Ixx, Ixy, Ixz, Iyy, Iyz, Izz] = inertia
-
-  // 对称惯性矩阵 M：M[i][j] = r_i^T · I · r_j，其中 r_i 为 R 的第 i 行向量
-  // I_local[i][j] = (R·I·Rᵀ)[i][j] = r_i · (I · r_j)
-  const dot = (r: number[], c: number[]) =>
-    r[0] * (c[0] * Ixx + c[1] * Ixy + c[2] * Ixz) +
-    r[1] * (c[0] * Ixy + c[1] * Iyy + c[2] * Iyz) +
-    r[2] * (c[0] * Ixz + c[1] * Iyz + c[2] * Izz)
-
-  return [
-    dot(Rx, Rx),  // ixx_local
-    dot(Rx, Ry),  // ixy_local
-    dot(Rx, Rz),  // ixz_local
-    dot(Ry, Ry),  // iyy_local
-    dot(Ry, Rz),  // iyz_local
-    dot(Rz, Rz),  // izz_local
-  ]
 }
 
 function fmtVec3(v: [number, number, number] | number[]): string {

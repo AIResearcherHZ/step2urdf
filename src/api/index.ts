@@ -39,10 +39,10 @@ class RequestHttp {
       (config: CustomAxiosRequestConfig) => {
         // 重复请求不需要取消，在 api 服务中通过指定的第三个参数: { cancel: false } 来控制
         config.cancel ??= true;
-        config.cancel && axiosCanceler.addPending(config);
+        if (config.cancel) axiosCanceler.addPending(config);
         // 当前请求不需要显示 loading，在 api 服务中通过指定的第三个参数: { loading: false } 来控制
         config.loading ??= true;
-        config.loading && showFullScreenLoading();
+        if (config.loading) showFullScreenLoading();
         return config;
       },
       (error: AxiosError) => {
@@ -58,7 +58,7 @@ class RequestHttp {
       (response: AxiosResponse & { config: CustomAxiosRequestConfig }) => {
         const { data, config } = response;
         axiosCanceler.removePending(config);
-        config.loading && tryHideFullScreenLoading();
+        if (config.loading) tryHideFullScreenLoading();
         // 全局错误信息拦截（防止下载文件的时候返回数据流，没有 code 直接报错）
         if (data.code && data.code !== ResultEnum.SUCCESS) {
           ElMessage.error(data.msg);
@@ -90,7 +90,7 @@ class RequestHttp {
     return this.service.post(url, params, _object);
   }
   postAudio<T>(url: string, params?: object | string, _object = {}): Promise<T> {
-    return this.service.post(url, params, { ..._object, responseType: "blob", headers: { Accept: "audio/wav" } });
+    return this.service.post(url, params, { ..._object, responseType: "blob", headers: { Accept: "audio/wav" } }) as Promise<T>;
   }
   put<T>(url: string, params?: object, _object = {}): Promise<ResultData<T>> {
     return this.service.put(url, params, _object);

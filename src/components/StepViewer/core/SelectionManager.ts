@@ -123,8 +123,6 @@ export class SelectionManager {
   private hoveredMesh: THREE.Mesh | null = null
   private hoveredBrepFaceIndex: number = -1
   private hoveredSolid: SolidObject | null = null
-  /** Regular Mesh hover: 保存原始 emissive */
-  private originalEmissive: THREE.Color | null = null
 
   // 高亮材质缓存（用于选中状态 - 仅 Regular Mesh）
   private highlightMaterials: Map<string, THREE.MeshStandardMaterial> = new Map()
@@ -376,14 +374,7 @@ export class SelectionManager {
    * Regular Mesh → emissive 颜色变化
    * InstancedMesh → 仅边缘线高亮
    */
-  private applyHoverHighlight(mesh: THREE.Mesh, solid: SolidObject): void {
-    if (!(mesh instanceof THREE.InstancedMesh)) {
-      const material = mesh.material as THREE.MeshStandardMaterial
-      if (material && material.emissive) {
-        this.originalEmissive = material.emissive.clone()
-        material.emissiveIntensity = 0.3
-      }
-    }
+  private applyHoverHighlight(_mesh: THREE.Mesh, solid: SolidObject): void {
     this.hoverSolidEdgeLines(solid, true)
   }
 
@@ -391,14 +382,6 @@ export class SelectionManager {
    * 清除 hover 高亮
    */
   private clearHoverHighlight(): void {
-    if (this.hoveredMesh && this.originalEmissive) {
-      const material = this.hoveredMesh.material as THREE.MeshStandardMaterial
-      if (material && material.emissive) {
-        material.emissive.copy(this.originalEmissive)
-        material.emissiveIntensity = 0
-      }
-      this.originalEmissive = null
-    }
     if (this.hoveredSolid) {
       this.hoverSolidEdgeLines(this.hoveredSolid, false)
       // 边模式 hover：恢复拓扑边颜色
@@ -511,6 +494,16 @@ export class SelectionManager {
    * 设置 Solid 对象列表（支持 Regular Mesh + InstancedMesh）
    */
   setSolids(solids: SolidObject[]): void {
+    this.clearSelectionInternal()
+    this.clearHoverHighlight()
+    this.hoveredFeature = null
+    this.hoveredMesh = null
+    this.hoveredSolid = null
+    this.hoveredBrepFaceIndex = -1
+    this.highlightMaterials.forEach(mat => mat.dispose())
+    this.highlightMaterials.clear()
+    this.originalMaterials.clear()
+
     this.solids = solids
 
     this.meshToSolid.clear()
@@ -888,6 +881,15 @@ export class SelectionManager {
         mat.needsUpdate = true
       }
       this.originalMaterials.delete(meshKey)
+
+      const staleKeys: string[] = []
+      this.highlightMaterials.forEach((mat, key) => {
+        if (key.startsWith(`${meshKey}_`)) {
+          mat.dispose()
+          staleKeys.push(key)
+        }
+      })
+      staleKeys.forEach(k => this.highlightMaterials.delete(k))
     })
 
     // ★ 恢复 InstancedMesh 的原始 instanceColor
@@ -1862,6 +1864,7 @@ export class SelectionManager {
     this.edgeIndexMap.clear()
     this.meshToSolid.clear()
     this.solidIdMap.clear()
+    this.solids = []
     this.cachedMeshes = []
     this.cachedTopologyEdges = []
     this.cachedRect = null

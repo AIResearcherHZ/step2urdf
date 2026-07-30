@@ -8,13 +8,12 @@ import { EChartsType, ECElementEvent } from "echarts/core";
 import echarts, { ECOption } from "./config";
 import { useDebounceFn } from "@vueuse/core";
 // import { useGlobalStore } from "@/stores/modules/global";
-import { storeToRefs } from "pinia";
 
 interface Props {
   option: ECOption;
   renderer?: "canvas" | "svg";
   resize?: boolean;
-  theme?: Object | string;
+  theme?: object | string;
   width?: number | string;
   height?: number | string;
   onClick?: (event: ECElementEvent) => any;

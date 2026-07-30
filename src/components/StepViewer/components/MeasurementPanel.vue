@@ -71,7 +71,7 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'remove', id: string): void
-  (e: 'clear-all'): void
+  (e: 'clearAll'): void
 }>()
 
 // 面板位置
@@ -92,7 +92,7 @@ function handleRemove(id: string): void {
 }
 
 function handleClearAll(): void {
-  emit('clear-all')
+  emit('clearAll')
 }
 
 // ——— 面板拖拽移动 ———

@@ -11,7 +11,7 @@
 import * as THREE from 'three'
 import { ArcballControls } from 'three/examples/jsm/controls/ArcballControls.js'
 import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js'
-import type { RenderConfig, ViewPreset, CameraConfig } from '../types'
+import type { ViewPreset, CameraConfig } from '../types'
 import {
   createRenderer,
   configureRenderer,
@@ -74,6 +74,8 @@ export class SceneManager {
 
   // 按需渲染：脏标记机制
   private _needsRender = true
+  /** 已销毁标记：阻止 RAF 循环在 dispose 后继续注册下一帧 */
+  private disposed = false
   /** 是否正在进行相机动画 */
   private isAnimating = false
   /** ViewHelper 动画状态跟踪（用于动画结束时恢复 controls） */
@@ -281,6 +283,7 @@ export class SceneManager {
    */
   private startRenderLoop() {
     const animate = () => {
+      if (this.disposed) return
       this.animationId = requestAnimationFrame(animate)
 
       const delta = this.clock.getDelta()
@@ -421,32 +424,47 @@ export class SceneManager {
    * 清空所有模型
    */
   clearModels(): void {
+    // 材质在多个 Solid 间按颜色共享（StepLoader 的 materialCache），
+    // 若逐 mesh dispose 会对同一材质重复调用；先去重收集，最后统一释放。
+    const materials = new Set<THREE.Material>()
+
     while (this.modelGroup.children.length > 0) {
       const child = this.modelGroup.children[0]
       this.modelGroup.remove(child)
-      this.disposeObject(child)
+      this.disposeObject(child, materials)
     }
+
+    materials.forEach(m => m.dispose())
+
     this.computeSceneStats()
     this.markDirty()
   }
 
   /**
-   * 递归释放对象资源（包括 Mesh、Line、LineSegments 等）
+   * 递归释放对象的几何体资源；材质收集到 out 中由调用方去重后统一释放
    */
-  private disposeObject(object: THREE.Object3D): void {
+  private disposeObject(object: THREE.Object3D, out: Set<THREE.Material>): void {
     if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
-      if (object.geometry) {
-        object.geometry.dispose()
+      const geo = object.geometry as THREE.BufferGeometry & { boundsTree?: unknown; disposeBoundsTree?: () => void }
+      if (geo) {
+        // three-mesh-bvh 挂在几何体上的 boundsTree 需显式释放
+        if (geo.boundsTree && typeof geo.disposeBoundsTree === 'function') {
+          geo.disposeBoundsTree()
+        }
+        geo.dispose()
       }
       if (object.material) {
         if (Array.isArray(object.material)) {
-          object.material.forEach(m => m.dispose())
+          object.material.forEach(m => out.add(m))
         } else {
-          object.material.dispose()
+          out.add(object.material)
         }
       }
     }
-    object.children.forEach(child => this.disposeObject(child))
+    if (object instanceof THREE.InstancedMesh) {
+      object.dispose()
+    }
+    object.children.forEach(child => this.disposeObject(child, out))
   }
 
   /**
@@ -698,13 +716,19 @@ export class SceneManager {
    * 销毁场景管理器
    */
   dispose(): void {
+    this.disposed = true
+
     // 停止渲染循环
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId)
+      this.animationId = null
     }
 
     // 移除事件监听
     window.removeEventListener('resize', this.handleResize)
+
+    // 释放外部注册的渲染回调，避免闭包持有已销毁的组件状态
+    this.renderCallbacks.length = 0
 
     // 清理控制器
     this.controls.dispose()

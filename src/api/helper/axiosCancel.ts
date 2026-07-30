@@ -48,7 +48,7 @@ export class AxiosCanceler {
    */
   removeAllPending() {
     pendingMap.forEach(controller => {
-      controller && controller.abort();
+      if (controller) controller.abort();
     });
     pendingMap.clear();
   }

@@ -1,7 +1,6 @@
 ﻿<template>
   <Teleport to="body">
     <div v-show="urdfStore.jointWizardVisible" class="joint-wizard-panel" :style="panelStyle">
-      <!-- 标题栏（可拖拽） -->
       <div class="panel-header" @mousedown="startDrag">
         <span class="panel-title">⚙️ 创建关节</span>
         <div class="panel-actions">
@@ -11,7 +10,6 @@
       </div>
 
       <div class="panel-body">
-        <!-- Links 选择 -->
         <div class="field-row">
           <span class="field-label">Parent:</span>
           <el-select v-model="parentLinkId" placeholder="Parent Link" size="small" style="flex:1">
@@ -21,57 +19,69 @@
         <div class="field-row">
           <span class="field-label">Child:</span>
           <el-select v-model="childLinkId" placeholder="Child Link" size="small" style="flex:1">
-            <el-option v-for="l in availableChildLinks" :key="l.id" :label="l.name" :value="l.id"
+            <el-option
+v-for="l in availableChildLinks" :key="l.id" :label="l.name" :value="l.id"
               :disabled="l.id === parentLinkId" />
           </el-select>
         </div>
 
-        <!-- 提示：打开面板即可直接拾取 -->
         <div class="pick-hint">
           <el-tag size="small" type="warning">🎯 直接点击 3D 圆弧边/直线拾取轴线</el-tag>
-          <el-button v-if="hasSnap" size="small" type="info" text @click="handleFlipNormal">🔄 反转轴向</el-button>
+          <div v-if="hasSnap" class="flip-row">
+            <span class="flip-label">反转轴向</span>
+            <el-button-group>
+              <el-button size="small" @click="handleFlipAxis('x')">🔄 X</el-button>
+              <el-button size="small" @click="handleFlipAxis('y')">🔄 Y</el-button>
+              <el-button size="small" type="primary" @click="handleFlipAxis('z')">🔄 Z</el-button>
+            </el-button-group>
+          </div>
         </div>
 
-        <!-- Origin XYZ -->
         <div class="field-row">
           <span class="field-label">Origin:</span>
           <div class="vec3-inputs">
-            <el-input-number v-model="originXYZ[0]" size="small" :step="0.001" :precision="6"
+            <el-input-number
+v-model="originXYZ[0]" size="small" :step="0.001" :precision="6"
               controls-position="right" />
-            <el-input-number v-model="originXYZ[1]" size="small" :step="0.001" :precision="6"
+            <el-input-number
+v-model="originXYZ[1]" size="small" :step="0.001" :precision="6"
               controls-position="right" />
-            <el-input-number v-model="originXYZ[2]" size="small" :step="0.001" :precision="6"
+            <el-input-number
+v-model="originXYZ[2]" size="small" :step="0.001" :precision="6"
               controls-position="right" />
           </div>
         </div>
 
-        <!-- Origin RPY -->
         <div class="field-row">
           <span class="field-label">RPY:</span>
           <div class="vec3-inputs">
-            <el-input-number v-model="originRPY[0]" size="small" :step="0.01" :precision="6"
+            <el-input-number
+v-model="originRPY[0]" size="small" :step="0.01" :precision="6"
               controls-position="right" />
-            <el-input-number v-model="originRPY[1]" size="small" :step="0.01" :precision="6"
+            <el-input-number
+v-model="originRPY[1]" size="small" :step="0.01" :precision="6"
               controls-position="right" />
-            <el-input-number v-model="originRPY[2]" size="small" :step="0.01" :precision="6"
+            <el-input-number
+v-model="originRPY[2]" size="small" :step="0.01" :precision="6"
               controls-position="right" />
           </div>
         </div>
 
-        <!-- Axis -->
         <div class="field-row">
           <span class="field-label">Axis:</span>
           <div class="vec3-inputs">
-            <el-input-number v-model="axis[0]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
+            <el-input-number
+v-model="axis[0]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
               controls-position="right" />
-            <el-input-number v-model="axis[1]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
+            <el-input-number
+v-model="axis[1]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
               controls-position="right" />
-            <el-input-number v-model="axis[2]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
+            <el-input-number
+v-model="axis[2]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
               controls-position="right" />
           </div>
         </div>
 
-        <!-- Type + Name -->
         <div class="field-row">
           <span class="field-label">Type:</span>
           <el-select v-model="jointType" size="small" style="flex:1">
@@ -86,7 +96,6 @@
           <el-input v-model="jointName" placeholder="自动生成" size="small" style="flex:1" />
         </div>
 
-        <!-- Limits -->
         <template v-if="jointType !== 'fixed'">
           <div class="limits-header">限位</div>
           <div class="field-row">
@@ -105,19 +114,20 @@
           </div>
           <div class="field-row">
             <span class="field-label">Velocity:</span>
-            <el-input-number v-model="limits.velocity" size="small" :step="0.1" :precision="2"
+            <el-input-number
+v-model="limits.velocity" size="small" :step="0.1" :precision="2"
               controls-position="right" />
           </div>
         </template>
       </div>
 
-      <!-- 底部按钮 -->
       <div class="panel-footer">
         <el-button size="small" @click="handleClose">取消</el-button>
         <el-button size="default" type="success" :disabled="!canCreate" @click="handleCreate"> 创建关节</el-button>
       </div>
     </div>
   </Teleport>
+
 </template>
 
 <script setup lang="ts">
@@ -126,6 +136,7 @@ import * as THREE from 'three'
 import { ElMessage } from 'element-plus'
 import { useURDFStore } from '../../stores/useURDFStore'
 import { computeRelativeTransform } from '../../core/useKinematicsWorker'
+import { buildAxisFrame, flipAxisFrame, frameToArray, type AxisFrame, type FrameAxis } from '../../core/AxisFrame'
 import type { JointType, GeometryFeature } from '../../types'
 
 const urdfStore = useURDFStore()
@@ -134,10 +145,9 @@ const emit = defineEmits<{
   (e: 'created', jointId: string): void
   (e: 'startEdgePick'): void
   (e: 'stopEdgePick'): void
-  (e: 'flipNormal'): void
+  (e: 'flipAxis', axis: FrameAxis): void
 }>()
 
-// 面板位置
 const position = reactive({ x: window.innerWidth - 420, y: 80 })
 
 const panelStyle = computed<CSSProperties>(() => ({
@@ -145,7 +155,6 @@ const panelStyle = computed<CSSProperties>(() => ({
   top: `${position.y}px`
 }))
 
-// 表单数据
 const parentLinkId = ref('')
 const childLinkId = ref('')
 const originXYZ = reactive<[number, number, number]>([0, 0, 0])
@@ -156,9 +165,9 @@ const jointType = ref<JointType>('revolute')
 const limits = reactive({ lower: -3.14159, upper: 3.14159, effort: 100, velocity: 1 })
 const pickedEdgeInfo = ref('')
 
-/** 缓存当前 snap 世界坐标（用于反转轴向时重新计算） */
 let cachedSnapPosition: [number, number, number] | null = null
 let cachedSnapNormal: [number, number, number] | null = null
+const cachedFrame = ref<AxisFrame | null>(null)
 
 const availableChildLinks = computed(() => {
   const usedChildIds = new Set(urdfStore.robot.joints.map(j => j.childLinkId))
@@ -169,8 +178,7 @@ const canCreate = computed(() => {
   return parentLinkId.value && childLinkId.value && parentLinkId.value !== childLinkId.value
 })
 
-/** 是否已拾取过边（缓存了 snap 数据），用于显示反转按钮 */
-const hasSnap = computed(() => cachedSnapNormal !== null)
+const hasSnap = computed(() => cachedFrame.value !== null)
 
 function handleCreate(): void {
   const result = urdfStore.addJoint({
@@ -212,11 +220,10 @@ function resetForm(): void {
   pickedEdgeInfo.value = ''
   cachedSnapPosition = null
   cachedSnapNormal = null
+  cachedFrame.value = null
 }
 
-/** 由外部调用：3D 场景拾取到边时触发，通过 Worker 计算相对坐标 */
 async function applyPickedEdge(feature: GeometryFeature): Promise<void> {
-  // 提取 snap 数据
   let snapPos: [number, number, number]
   let snapNorm: [number, number, number]
 
@@ -234,53 +241,47 @@ async function applyPickedEdge(feature: GeometryFeature): Promise<void> {
     pickedEdgeInfo.value = feature.edgeCurveType || feature.type
   }
 
-  // 缓存 snap 数据（供反转使用）
   cachedSnapPosition = snapPos
   cachedSnapNormal = snapNorm
+  cachedFrame.value = buildAxisFrame(snapNorm)
 
-  await applySnapToForm(snapPos, snapNorm)
+  await applySnapToForm(snapPos, snapNorm, cachedFrame.value)
 }
 
-/** 反转轴向并重新计算 RPY */
-async function handleFlipNormal(): Promise<void> {
-  if (!cachedSnapNormal || !cachedSnapPosition) return
+async function handleFlipAxis(axis: FrameAxis): Promise<void> {
+  if (!cachedFrame.value || !cachedSnapPosition) return
 
-  // 反转法线
-  cachedSnapNormal = [
-    -cachedSnapNormal[0],
-    -cachedSnapNormal[1],
-    -cachedSnapNormal[2]
-  ]
+  cachedFrame.value = flipAxisFrame(cachedFrame.value, axis)
+  cachedSnapNormal = [...cachedFrame.value.z] as [number, number, number]
 
-  // 通知主线程反转 Gizmo
-  emit('flipNormal')
+  emit('flipAxis', axis)
 
-  // 重新计算
-  await applySnapToForm(cachedSnapPosition, cachedSnapNormal)
+  await applySnapToForm(cachedSnapPosition, cachedSnapNormal, cachedFrame.value)
 }
 
-/** 将 snap 数据通过 Worker 计算并填入表单 */
 async function applySnapToForm(
   snapPos: [number, number, number],
-  snapNorm: [number, number, number]
+  snapNorm: [number, number, number],
+  frame?: AxisFrame | null
 ): Promise<void> {
-  // 获取父级世界矩阵
   const parentWorld = parentLinkId.value
     ? urdfStore.linkWorldTransforms.get(parentLinkId.value)
     : null
   const parentElements = parentWorld ? parentWorld.elements : new THREE.Matrix4().elements
 
-  // Worker 异步计算
-  const result = await computeRelativeTransform(parentElements, snapPos, snapNorm)
+  const result = await computeRelativeTransform(
+    parentElements,
+    snapPos,
+    snapNorm,
+    frame ? frameToArray(frame) : undefined
+  )
 
-  // 填入表单
   originXYZ[0] = result.xyz[0]
   originXYZ[1] = result.xyz[1]
   originXYZ[2] = result.xyz[2]
   originRPY[0] = result.rpy[0]
   originRPY[1] = result.rpy[1]
   originRPY[2] = result.rpy[2]
-  // RPY 已将关节局部 Z 轴对齐到 snapNormal，因此 axis 为局部 Z
   axis[0] = 0
   axis[1] = 0
   axis[2] = 1
@@ -288,11 +289,9 @@ async function applySnapToForm(
 
 defineExpose({ applyPickedEdge })
 
-// ★ 打开面板时自动进入边拾取模式，关闭时自动退出
 watch(() => urdfStore.jointWizardVisible, (vis) => {
   if (vis) {
     resetForm()
-    // 重置位置到右上角
     position.x = window.innerWidth - 420
     position.y = 80
     emit('startEdgePick')
@@ -301,7 +300,6 @@ watch(() => urdfStore.jointWizardVisible, (vis) => {
   }
 })
 
-// ========== 拖拽逻辑 ==========
 let isDragging = false
 let dragStartX = 0
 let dragStartY = 0
@@ -382,6 +380,18 @@ onBeforeUnmount(() => {
 
 .pick-hint {
   margin: 4px 0 8px;
+}
+
+.flip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.flip-label {
+  font-size: 11px;
+  color: #909399;
 }
 
 .field-row {

@@ -6,7 +6,8 @@
 <template>
   <Teleport to="body">
     <Transition name="model-tree-panel">
-      <div v-show="visible" class="model-tree-panel-overlay" ref="panelRef"
+      <div
+v-show="visible" class="model-tree-panel-overlay" ref="panelRef"
         :style="{ left: panelPos.x + 'px', top: panelPos.y + 'px', width: panelWidth + 'px' }">
         <!-- 拖拽标题栏 -->
         <div class="panel-header" @mousedown="startDrag">
@@ -14,7 +15,8 @@
           <el-button size="small" text @click="$emit('close')">✕</el-button>
         </div>
 
-        <ModelTree @select="handleTreeSelect" @solid-hover="handleSolidHover"
+        <ModelTree
+@select="handleTreeSelect" @solid-hover="handleSolidHover"
           @toggle-solid-visibility="handleToggleSolidVisibility" />
 
         <!-- 拖拽调整宽度 -->
@@ -35,9 +37,9 @@ defineProps<{
 
 // 事件
 const emit = defineEmits<{
-  (e: 'tree-select', node: TreeNode, multi: boolean): void
-  (e: 'solid-hover', solidId: string | null): void
-  (e: 'toggle-solid-visibility', solidId: string): void
+  (e: 'treeSelect', node: TreeNode, multi: boolean): void
+  (e: 'solidHover', solidId: string | null): void
+  (e: 'toggleSolidVisibility', solidId: string): void
   (e: 'close'): void
 }>()
 
@@ -58,15 +60,15 @@ function getDefaultPanelX(width: number): number {
 const panelPos = reactive({ x: getDefaultPanelX(panelWidth.value), y: PANEL_TOP_OFFSET })
 
 function handleTreeSelect(node: TreeNode, multi: boolean): void {
-  emit('tree-select', node, multi)
+  emit('treeSelect', node, multi)
 }
 
 function handleSolidHover(solidId: string | null): void {
-  emit('solid-hover', solidId)
+  emit('solidHover', solidId)
 }
 
 function handleToggleSolidVisibility(solidId: string): void {
-  emit('toggle-solid-visibility', solidId)
+  emit('toggleSolidVisibility', solidId)
 }
 
 // ——— 面板拖拽移动 ———

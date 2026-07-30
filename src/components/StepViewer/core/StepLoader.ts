@@ -18,16 +18,27 @@ import type {
   SerializedTreeNode,
   TreeNode,
   SolidObject,
-  GeometryFeature,
-  FaceGroupInfo,
-  FaceGeometryData,
-  EdgeGroupInfo,
-  EdgeGeometryData,
-  WorkerResponse
+  GeometryFeature
 } from '../types'
 import { FeatureType } from '../types'
 import { initBVH, buildBVH } from './BVHAccelerator'
 import type { StepParseWorkerApi } from './StepParseWorker'
+
+interface PositionStats {
+  empty: boolean
+  min: THREE.Vector3
+  max: THREE.Vector3
+  center: THREE.Vector3
+  centroid: THREE.Vector3
+}
+
+interface SolidInfo {
+  index: number
+  data: SerializedSolidData
+  fingerprint: string
+  centroid: THREE.Vector3
+  stats: PositionStats
+}
 
 // Worker 状态管理
 let worker: Worker | null = null
@@ -173,14 +184,7 @@ export class StepLoader {
     })
     await this.yieldToMain()
 
-    const { solids, group } = this.buildThreeJSObjects(serializedSolids)
-
-    // ★ 按原始索引排序，保证 solids[solidIndex] 与树节点的 solidIndex 一致
-    solids.sort((a, b) => {
-      const aIdx = parseInt(a.id.replace('solid_', ''))
-      const bIdx = parseInt(b.id.replace('solid_', ''))
-      return aIdx - bIdx
-    })
+    const { solids, group } = this.buildScene(serializedSolids)
 
     // 阶段 4：构建结构树
     const treeNodes = this.buildTreeNodes(tree)
@@ -194,10 +198,31 @@ export class StepLoader {
     return { solids, group, treeNodes }
   }
 
+  rebuildFromSerialized(serializedSolids: SerializedSolidData[]): {
+    solids: SolidObject[]
+    group: THREE.Group
+  } {
+    return this.buildScene(serializedSolids)
+  }
+
+  private buildScene(serializedSolids: SerializedSolidData[]): {
+    solids: SolidObject[]
+    group: THREE.Group
+  } {
+    const { solids, group } = this.buildThreeJSObjects(serializedSolids)
+
+    solids.sort((a, b) => {
+      const aIdx = parseInt(a.id.replace('solid_', ''))
+      const bIdx = parseInt(b.id.replace('solid_', ''))
+      return aIdx - bIdx
+    })
+
+    return { solids, group }
+  }
+
   /**
    * 在 Worker 中执行 STEP 解析（通过 Comlink）
-   */
-  private async parseInWorker(
+   */  private async parseInWorker(
     fileBuffer: ArrayBuffer,
     onProgress?: (progress: UploadProgress) => void
   ): Promise<{ solids: SerializedSolidData[]; tree: SerializedTreeNode }> {
@@ -228,29 +253,21 @@ export class StepLoader {
   } {
     const group = new THREE.Group()
     const solids: SolidObject[] = []
-
-    // 材质缓存：colorHex → MeshStandardMaterial
     const materialCache = new Map<string, THREE.MeshStandardMaterial>()
 
-    // ★ InstancedMesh 阈值：≥ 3 个相同几何体才合并
     const INSTANCE_THRESHOLD = 3
 
-    // Phase 1: 计算每个 Solid 的几何体指纹
-    interface SolidInfo {
-      index: number
-      data: SerializedSolidData
-      fingerprint: string
-      centroid: THREE.Vector3
-    }
+    const solidInfos: SolidInfo[] = serializedSolids.map((sd, i) => {
+      const stats = this.computePositionStats(sd.positions)
+      return {
+        index: i,
+        data: sd,
+        fingerprint: this.computeGeometryFingerprint(sd, stats),
+        centroid: stats.centroid,
+        stats
+      }
+    })
 
-    const solidInfos: SolidInfo[] = serializedSolids.map((sd, i) => ({
-      index: i,
-      data: sd,
-      fingerprint: this.computeGeometryFingerprint(sd),
-      centroid: this.computeCentroid(sd.positions)
-    }))
-
-    // Phase 2: 按指纹分组
     const groups = new Map<string, SolidInfo[]>()
     for (const info of solidInfos) {
       const list = groups.get(info.fingerprint) || []
@@ -258,7 +275,6 @@ export class StepLoader {
       groups.set(info.fingerprint, list)
     }
 
-    // Phase 3: 逐组构建 Mesh / InstancedMesh
     for (const [, members] of groups) {
       if (members.length >= INSTANCE_THRESHOLD) {
         this.createInstancedSolids(members, materialCache, solids, group)
@@ -272,31 +288,55 @@ export class StepLoader {
     return { solids, group }
   }
 
-  // ========== 几何体指纹 & 辅助方法 ==========
+  private computePositionStats(positions: Float32Array): PositionStats {
+    let minX = Infinity, minY = Infinity, minZ = Infinity
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    let sumX = 0, sumY = 0, sumZ = 0
+    const count = positions.length / 3
 
-  /**
-   * 计算几何体指纹（用于检测重复几何体）
-   * 基于顶点数 + 索引数 + 包围盒尺寸 + 面类型分布
-   */
-  private computeGeometryFingerprint(solidData: SerializedSolidData): string {
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i], y = positions[i + 1], z = positions[i + 2]
+      if (x < minX) minX = x
+      if (y < minY) minY = y
+      if (z < minZ) minZ = z
+      if (x > maxX) maxX = x
+      if (y > maxY) maxY = y
+      if (z > maxZ) maxZ = z
+      sumX += x
+      sumY += y
+      sumZ += z
+    }
+
+    if (count === 0 || !isFinite(minX)) {
+      return {
+        empty: true,
+        min: new THREE.Vector3(),
+        max: new THREE.Vector3(),
+        center: new THREE.Vector3(),
+        centroid: new THREE.Vector3()
+      }
+    }
+
+    const min = new THREE.Vector3(minX, minY, minZ)
+    const max = new THREE.Vector3(maxX, maxY, maxZ)
+    return {
+      empty: false,
+      min,
+      max,
+      center: new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5),
+      centroid: new THREE.Vector3(sumX / count, sumY / count, sumZ / count)
+    }
+  }
+
+  private computeGeometryFingerprint(solidData: SerializedSolidData, stats: PositionStats): string {
     const posCount = solidData.positions.length / 3
     const idxCount = solidData.indices.length
     const faceCount = solidData.faceGroups.length
 
-    // 包围盒尺寸
-    let minX = Infinity, minY = Infinity, minZ = Infinity
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
-    for (let i = 0; i < solidData.positions.length; i += 3) {
-      const x = solidData.positions[i], y = solidData.positions[i + 1], z = solidData.positions[i + 2]
-      if (x < minX) minX = x; if (y < minY) minY = y; if (z < minZ) minZ = z
-      if (x > maxX) maxX = x; if (y > maxY) maxY = y; if (z > maxZ) maxZ = z
-    }
+    const w = (stats.max.x - stats.min.x).toFixed(2)
+    const h = (stats.max.y - stats.min.y).toFixed(2)
+    const d = (stats.max.z - stats.min.z).toFixed(2)
 
-    const w = (maxX - minX).toFixed(2)
-    const h = (maxY - minY).toFixed(2)
-    const d = (maxZ - minZ).toFixed(2)
-
-    // 面类型分布（防止不同形状但包围盒相同的误合并）
     const faceTypeCounts: Record<string, number> = {}
     for (const geom of solidData.faceGeometries) {
       faceTypeCounts[geom.type] = (faceTypeCounts[geom.type] || 0) + 1
@@ -307,21 +347,6 @@ export class StepLoader {
       .join(',')
 
     return `${posCount}_${idxCount}_${faceCount}_${w}_${h}_${d}_${faceTypeStr}`
-  }
-
-  /**
-   * 计算顶点数据的质心（用于 InstancedMesh 平移矩阵）
-   */
-  private computeCentroid(positions: Float32Array): THREE.Vector3 {
-    const centroid = new THREE.Vector3()
-    const count = positions.length / 3
-    for (let i = 0; i < positions.length; i += 3) {
-      centroid.x += positions[i]
-      centroid.y += positions[i + 1]
-      centroid.z += positions[i + 2]
-    }
-    centroid.divideScalar(count)
-    return centroid
   }
 
   /**
@@ -348,26 +373,6 @@ export class StepLoader {
       cache.set(colorHex, mat)
     }
     return mat
-  }
-
-  /**
-   * 从位置数据计算包围盒
-   */
-  private computeBBoxFromPositions(
-    positions: Float32Array
-  ): { min: THREE.Vector3; max: THREE.Vector3; center: THREE.Vector3 } | undefined {
-    if (positions.length < 3) return undefined
-    let minX = Infinity, minY = Infinity, minZ = Infinity
-    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
-    for (let i = 0; i < positions.length; i += 3) {
-      const x = positions[i], y = positions[i + 1], z = positions[i + 2]
-      if (x < minX) minX = x; if (y < minY) minY = y; if (z < minZ) minZ = z
-      if (x > maxX) maxX = x; if (y > maxY) maxY = y; if (z > maxZ) maxZ = z
-    }
-    const min = new THREE.Vector3(minX, minY, minZ)
-    const max = new THREE.Vector3(maxX, maxY, maxZ)
-    const center = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5)
-    return { min, max, center }
   }
 
   // ========== Regular Mesh 创建 ==========
@@ -456,7 +461,7 @@ export class StepLoader {
    *   减少 N 次 EdgesGeometry 计算 + DrawCalls 从 N → 1
    */
   private createInstancedSolids(
-    members: { index: number; data: SerializedSolidData; fingerprint: string; centroid: THREE.Vector3 }[],
+    members: SolidInfo[],
     materialCache: Map<string, THREE.MeshStandardMaterial>,
     solids: SolidObject[],
     group: THREE.Group
@@ -575,24 +580,25 @@ export class StepLoader {
     try {
       const refEdgeData = ref.data
       if (refEdgeData.edgeGroups && refEdgeData.edgeGroups.length > 0 && refEdgeData.edgePolylines.length > 0) {
-        // 计算参考实例的拓扑边折线总点数（用于转换为线段格式）
         const refPolylines = refEdgeData.edgePolylines
-        // 创建线段对：每条边的相邻点组成线段 (0-1, 1-2, 2-3, ...)
-        const segmentsPerEdge: number[][] = []
+        const segmentsPerEdge: Float32Array[] = []
         let totalSegmentVerts = 0
         for (const eg of refEdgeData.edgeGroups) {
-          const segs: number[] = []
-          for (let p = 0; p < eg.polylineCount - 1; p++) {
+          const pairs = eg.polylineCount > 1 ? eg.polylineCount - 1 : 0
+          const segs = new Float32Array(pairs * 6)
+          for (let p = 0; p < pairs; p++) {
             const idx0 = (eg.polylineStart + p) * 3
             const idx1 = (eg.polylineStart + p + 1) * 3
-            // 中心化（与 sharedGeometry 一致）
-            segs.push(
-              refPolylines[idx0] - refCentroid.x, refPolylines[idx0 + 1] - refCentroid.y, refPolylines[idx0 + 2] - refCentroid.z,
-              refPolylines[idx1] - refCentroid.x, refPolylines[idx1 + 1] - refCentroid.y, refPolylines[idx1 + 2] - refCentroid.z
-            )
+            const o = p * 6
+            segs[o] = refPolylines[idx0] - refCentroid.x
+            segs[o + 1] = refPolylines[idx0 + 1] - refCentroid.y
+            segs[o + 2] = refPolylines[idx0 + 2] - refCentroid.z
+            segs[o + 3] = refPolylines[idx1] - refCentroid.x
+            segs[o + 4] = refPolylines[idx1 + 1] - refCentroid.y
+            segs[o + 5] = refPolylines[idx1 + 2] - refCentroid.z
           }
           segmentsPerEdge.push(segs)
-          totalSegmentVerts += segs.length / 3
+          totalSegmentVerts += pairs * 2
         }
 
         const totalVerts = totalSegmentVerts * members.length
@@ -660,7 +666,9 @@ export class StepLoader {
         solidIndex
       )
 
-      const bbox = this.computeBBoxFromPositions(member.data.positions)
+      const bbox = member.stats.empty
+        ? undefined
+        : { min: member.stats.min, max: member.stats.max, center: member.stats.center }
 
       let colorHex: number | undefined
       if (member.data.color && member.data.color.length >= 3) {
@@ -791,28 +799,38 @@ export class StepLoader {
     if (!solidData.edgePolylines || solidData.edgePolylines.length === 0) return null
 
     try {
-      // 将折线点转换为线段对格式: (p0,p1), (p1,p2), ...
-      const segments: number[] = []
-      const edgeIndices: number[] = []
+      let segmentCount = 0
+      for (const eg of solidData.edgeGroups) {
+        if (eg.polylineCount > 1) segmentCount += eg.polylineCount - 1
+      }
+      if (segmentCount === 0) return null
 
+      const vertexCount = segmentCount * 2
+      const segments = new Float32Array(vertexCount * 3)
+      const edgeIndices = new Float32Array(vertexCount)
+      const polylines = solidData.edgePolylines
+
+      let v = 0
       for (const eg of solidData.edgeGroups) {
         for (let p = 0; p < eg.polylineCount - 1; p++) {
           const idx0 = (eg.polylineStart + p) * 3
           const idx1 = (eg.polylineStart + p + 1) * 3
-          segments.push(
-            solidData.edgePolylines[idx0], solidData.edgePolylines[idx0 + 1], solidData.edgePolylines[idx0 + 2],
-            solidData.edgePolylines[idx1], solidData.edgePolylines[idx1 + 1], solidData.edgePolylines[idx1 + 2]
-          )
-          // 每个线段的两个顶点都记录边索引
-          edgeIndices.push(eg.edgeIndex, eg.edgeIndex)
+          const o = v * 3
+          segments[o] = polylines[idx0]
+          segments[o + 1] = polylines[idx0 + 1]
+          segments[o + 2] = polylines[idx0 + 2]
+          segments[o + 3] = polylines[idx1]
+          segments[o + 4] = polylines[idx1 + 1]
+          segments[o + 5] = polylines[idx1 + 2]
+          edgeIndices[v] = eg.edgeIndex
+          edgeIndices[v + 1] = eg.edgeIndex
+          v += 2
         }
       }
 
-      if (segments.length === 0) return null
-
       const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(segments), 3))
-      geo.setAttribute('edgeIndex', new THREE.Float32BufferAttribute(new Float32Array(edgeIndices), 1))
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(segments, 3))
+      geo.setAttribute('edgeIndex', new THREE.Float32BufferAttribute(edgeIndices, 1))
 
       const mat = new LineBasicMaterial({
         color: 0x444444,

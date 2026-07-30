@@ -8,18 +8,21 @@
     </div>
 
     <div class="link-list">
-      <div v-for="link in urdfStore.robot.links" :key="link.id" class="link-item"
+      <div
+v-for="link in urdfStore.robot.links" :key="link.id" class="link-item"
         :class="{ active: urdfStore.selectedLinkId === link.id }" @click="handleSelectLink(link.id)"
         @dblclick="startRename(link)" @mouseenter="hoverLinkId = link.id" @mouseleave="hoverLinkId = null">
         <div class="link-main">
           <!-- 编辑模式 -->
-          <el-input v-if="editingLinkId === link.id" v-model="editingName" size="small" @blur="finishRename(link)"
+          <el-input
+v-if="editingLinkId === link.id" v-model="editingName" size="small" @blur="finishRename(link)"
             @keydown.enter="finishRename(link)" @keydown.escape="cancelRename" ref="renameInputRef" autofocus
             style="width: 140px" />
           <!-- 显示模式 -->
           <span v-else class="link-name" :title="link.name">
             {{ link.name }}
-            <el-tag v-if="urdfStore.isBaseLink(link.id)" size="small" type="info"
+            <el-tag
+v-if="urdfStore.isBaseLink(link.id)" size="small" type="info"
               style="margin-left:4px;font-size:10px">root</el-tag>
           </span>
 
@@ -34,7 +37,8 @@
             <el-button size="small" type="primary" text :icon="Link" @click.stop="handleStartBinding(link.id)" />
           </el-tooltip>
           <el-tooltip content="删除" placement="top">
-            <el-button v-if="!urdfStore.isBaseLink(link.id)" size="small" type="danger" text :icon="Delete"
+            <el-button
+v-if="!urdfStore.isBaseLink(link.id)" size="small" type="danger" text :icon="Delete"
               @click.stop="handleDeleteLink(link.id)" />
           </el-tooltip>
         </div>

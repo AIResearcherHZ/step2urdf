@@ -7,7 +7,7 @@
         <span class="section-title">{{ contextTitle }}</span>
       </div>
       <div class="section-body">
-        <URDFJointProperties v-if="urdfStore.selectedJointId" @flip-normal="$emit('flipNormal')" />
+        <URDFJointProperties v-if="urdfStore.selectedJointId" />
         <URDFLinkProperties v-else-if="urdfStore.selectedLinkId" />
         <div v-else class="empty-hint context-empty">
           <el-icon style="font-size: 24px; color: #dcdfe6">
@@ -40,8 +40,7 @@ import { useURDFStore } from '../../stores/useURDFStore'
 import URDFJointProperties from './URDFJointProperties.vue'
 import URDFLinkProperties from './URDFLinkProperties.vue'
 
-const emit = defineEmits<{
-  (e: 'flipNormal'): void
+defineEmits<{
   (e: 'toggleFKPanel'): void
 }>()
 

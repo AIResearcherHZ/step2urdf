@@ -312,7 +312,7 @@ export class LineMeasurementTool {
     this.isDragging = false
   }
 
-  private handleMouseUp(_event: MouseEvent): void {
+  private handleMouseUp(): void {
     this.isDragging = false
   }
 

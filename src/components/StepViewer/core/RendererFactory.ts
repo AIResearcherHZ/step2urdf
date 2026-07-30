@@ -61,10 +61,8 @@ export async function isWebGPUAvailable(): Promise<boolean> {
 async function createWebGPURenderer(config: RendererConfig): Promise<UniversalRenderer | null> {
   try {
     // 动态导入 WebGPURenderer（避免在不支持的环境中报错）
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-expect-error - three/webgpu types require bundler moduleResolution
     const webgpuModule = await import('three/webgpu')
-    const WebGPURenderer = webgpuModule.default || webgpuModule.WebGPURenderer
+    const WebGPURenderer = webgpuModule.WebGPURenderer
 
     const renderer = new WebGPURenderer({
       antialias: config.antialias !== false,

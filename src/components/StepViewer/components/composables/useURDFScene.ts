@@ -1,9 +1,3 @@
-/**
- * URDF 场景操作 Composable
- * 管理 ForwardKinematics / FrameVisualizer / JointSnapVisualizer 生命周期
- * 以及绑定、边拾取、导出等 URDF 相关操作
- */
-
 import * as THREE from 'three'
 import { ElMessage } from 'element-plus'
 import { FrameVisualizer } from '../../core/FrameVisualizer'
@@ -12,9 +6,11 @@ import { JointSnapVisualizer } from '../../core/JointSnapVisualizer'
 import { computeRelativeTransform } from '../../core/useKinematicsWorker'
 import { exportURDFInWorker, disposeExportWorker } from '../../core/useExportWorker'
 import { serializeURDF } from '../../core/URDFSerializer'
+import { distributeInertia, type LinkInertiaInput } from '../../core/InertiaDistribution'
 import { useStepViewerStore } from '../../stores/useStepViewerStore'
 import { useURDFStore } from '../../stores/useURDFStore'
 import type { SceneManager, SelectionManager } from '../../core'
+import type { FrameAxis } from '../../core/AxisFrame'
 import type { GeometryFeature, SnapData } from '../../types'
 
 interface UseURDFSceneDeps {
@@ -37,8 +33,6 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
   function isEdgePickMode(): boolean { return edgePickMode }
   function getSnapData(): SnapData | null { return currentSnapData }
   function getBaseAxisLength(): number { return baseAxisLength }
-
-  // ========== 生命周期 ==========
 
   function initModules(): void {
     const sm = deps.getSceneManager()
@@ -87,6 +81,46 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     sm.markDirty()
   }
 
+  async function fillMissingLinkInertials(): Promise<number> {
+    const missing = new Set(
+      urdfStore.robot.links
+        .filter(l => !l.inertial && l.solidIds.length > 0)
+        .map(l => l.id)
+    )
+    if (missing.size === 0) return 0
+
+    const inputs: LinkInertiaInput[] = []
+    for (const link of urdfStore.robot.links) {
+      if (link.solidIds.length === 0) continue
+      const pairs: LinkInertiaInput['pairs'] = []
+      for (const solidId of link.solidIds) {
+        const solid = store.solidMap.get(solidId)
+        if (solid?.serializedData) {
+          pairs.push({ solidId, solidName: solid.name, data: solid.serializedData })
+        }
+      }
+      if (pairs.length > 0) inputs.push({ linkId: link.id, name: link.name, pairs })
+    }
+    if (inputs.length === 0) return 0
+
+    const results = await distributeInertia(inputs, urdfStore.totalMass)
+    let filled = 0
+    for (const row of results) {
+      if (!missing.has(row.linkId) || row.mass <= 0) continue
+      urdfStore.setLinkInertial(row.linkId, {
+        mass: row.mass,
+        com: row.com,
+        inertia: row.inertia
+      })
+      urdfStore.setLinkSolidMasses(
+        row.linkId,
+        Object.fromEntries(row.solids.map(s => [s.solidId, s.mass]))
+      )
+      filled++
+    }
+    return filled
+  }
+
   function disposeModules(): void {
     frameVisualizer?.dispose()
     frameVisualizer = null
@@ -98,8 +132,6 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     disposeExportWorker()
   }
 
-  // ========== Frame Visualizer 控制 ==========
-
   function setFrameVisible(visible: boolean): void {
     frameVisualizer?.setVisible(visible)
   }
@@ -107,13 +139,10 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
   function setAxisLength(scale: number): void {
     if (frameVisualizer) {
       frameVisualizer.setAxisLength(baseAxisLength * scale)
-      updateFKAndFrames()
+      deps.getSceneManager()?.markDirty()
     }
   }
 
-  // ========== Snap Visualizer ==========
-
-  /** 处理 hover 事件的 snap 更新（从 initViewer 的 hover 回调调用） */
   function handleHoverSnap(feature: GeometryFeature | null): void {
     const sm = deps.getSceneManager()
     if (!edgePickMode || !snapVisualizer) {
@@ -137,7 +166,8 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         currentSnapData = {
           position: [pos.x, pos.y, pos.z],
           normal: [norm.x, norm.y, norm.z],
-          featureType: feature.edgeCurveType as 'circle' | 'arc'
+          featureType: feature.edgeCurveType as 'circle' | 'arc',
+          frame: snapVisualizer.getCurrentFrame()
         }
         sm?.markDirty()
       }
@@ -149,7 +179,8 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         currentSnapData = {
           position: [pos.x, pos.y, pos.z],
           normal: [dir.x, dir.y, dir.z],
-          featureType: 'line'
+          featureType: 'line',
+          frame: snapVisualizer.getCurrentFrame()
         }
         sm?.markDirty()
       }
@@ -159,17 +190,16 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     }
   }
 
-  function flipNormal(): void {
+  function flipAxis(axis: FrameAxis): void {
     if (!snapVisualizer?.isVisible()) return
-    snapVisualizer.flipNormal()
+    snapVisualizer.flipAxis(axis)
     if (currentSnapData) {
-      const n = snapVisualizer.getCurrentNormal()
-      currentSnapData.normal = [n.x, n.y, n.z]
+      const f = snapVisualizer.getCurrentFrame()
+      currentSnapData.normal = [...f.z] as [number, number, number]
+      currentSnapData.frame = f
     }
     deps.getSceneManager()?.markDirty()
   }
-
-  // ========== 绑定模式 ==========
 
   function handleBindingClick(feature: GeometryFeature): void {
     if (!urdfStore.bindingMode.active || !urdfStore.bindingMode.targetLinkId) return
@@ -182,8 +212,6 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
 
     urdfStore.bindSolid(urdfStore.bindingMode.targetLinkId, feature.solidId)
   }
-
-  // ========== 边拾取模式 ==========
 
   function startEdgePickMode(): void {
     edgePickMode = true
@@ -230,14 +258,12 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     ElMessage.success('已更新关节参数')
   }
 
-  function handleJointCreated(_jointId: string): void {
+  function handleJointCreated(): void {
     urdfStore.showFrames = true
     snapVisualizer?.hide()
     currentSnapData = null
     updateFKAndFrames()
   }
-
-  // ========== URDF 导出 ==========
 
   async function handleExportURDF(exportCompleteAdVisible: { value: boolean }): Promise<void> {
 
@@ -253,6 +279,11 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     urdfStore.robot.joints.forEach(j => { j.currentValue = 0 })
 
     try {
+      const autoFilled = await fillMissingLinkInertials()
+      if (autoFilled > 0) {
+        ElMessage.info(`${autoFilled} 个连杆未设置惯性参数，已按整机总质量 ${urdfStore.totalMass} kg 自动分配`)
+      }
+
       const fk = forwardKinematics ?? new ForwardKinematics()
       fk.setRobot(urdfStore.robot)
 
@@ -304,7 +335,7 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         linkSolidMap,
         linkRestInverseMap,
         0.001,
-        (stage, _percent) => { urdfStore.exportProgress = stage }
+        (stage) => { urdfStore.exportProgress = stage }
       )
 
       const blob = new Blob([zipBuffer], { type: 'application/zip' })
@@ -328,28 +359,22 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
   }
 
   return {
-    // 生命周期
     initModules,
     updateFKAndFrames,
     disposeModules,
-    // 访问器
     getFK,
     isEdgePickMode,
     getSnapData,
     getBaseAxisLength,
-    // Frame 控制
     setFrameVisible,
     setAxisLength,
-    // Snap / Hover
     handleHoverSnap,
-    flipNormal,
-    // 绑定 & 边拾取
+    flipAxis,
     handleBindingClick,
     startEdgePickMode,
     stopEdgePickMode,
     applyPickedEdgeToExistingJoint,
     handleJointCreated,
-    // 导出
     handleExportURDF,
   }
 }

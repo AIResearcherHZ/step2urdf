@@ -8,7 +8,8 @@
     </div>
 
     <div class="joint-list">
-      <div v-for="joint in urdfStore.robot.joints" :key="joint.id" class="joint-item"
+      <div
+v-for="joint in urdfStore.robot.joints" :key="joint.id" class="joint-item"
         :class="{ active: urdfStore.selectedJointId === joint.id }" @click="handleSelectJoint(joint.id)"
         @mouseenter="hoverJointId = joint.id" @mouseleave="hoverJointId = null">
         <div class="joint-main">
@@ -17,7 +18,8 @@
         </div>
 
         <div class="joint-meta">
-          <el-select v-model="joint.type" size="small" style="width: 90px" @click.stop
+          <el-select
+v-model="joint.type" size="small" style="width: 90px" @click.stop
             @change="(val: any) => handleTypeChange(joint.id, val)">
             <el-option label="Revolute" value="revolute" />
             <el-option label="Prismatic" value="prismatic" />
@@ -25,7 +27,8 @@
             <el-option label="Continuous" value="continuous" />
           </el-select>
 
-          <el-button v-show="hoverJointId === joint.id" size="small" type="danger" text :icon="Delete"
+          <el-button
+v-show="hoverJointId === joint.id" size="small" type="danger" text :icon="Delete"
             @click.stop="handleDeleteJoint(joint.id)" />
         </div>
       </div>
@@ -41,34 +44,42 @@
       <div class="detail-section">
         <div class="detail-title">
           Origin
-          <el-button v-if="!urdfStore.edgePickEditJointId" size="small" type="warning" text
+          <el-button
+v-if="!urdfStore.edgePickEditJointId" size="small" type="warning" text
             @click="handleStartEdgePick">
             🎯 拾取边
           </el-button>
           <el-button v-else size="default" type="success" @click="handleStopEdgePick">
             完成拾取
           </el-button>
-          <el-button v-if="urdfStore.edgePickEditJointId === selectedJoint?.id" size="small" type="info" text
+          <el-button
+v-if="urdfStore.edgePickEditJointId === selectedJoint?.id" size="small" type="info" text
             @click="handleFlipNormal">
             🔄 反转
           </el-button>
         </div>
         <div class="detail-row">
           <span class="row-label">xyz:</span>
-          <el-input-number v-model="selectedJoint.origin.xyz[0]" size="small" :step="0.001" :precision="4"
+          <el-input-number
+v-model="selectedJoint.origin.xyz[0]" size="small" :step="0.001" :precision="4"
             controls-position="right" style="width: 90px" />
-          <el-input-number v-model="selectedJoint.origin.xyz[1]" size="small" :step="0.001" :precision="4"
+          <el-input-number
+v-model="selectedJoint.origin.xyz[1]" size="small" :step="0.001" :precision="4"
             controls-position="right" style="width: 90px" />
-          <el-input-number v-model="selectedJoint.origin.xyz[2]" size="small" :step="0.001" :precision="4"
+          <el-input-number
+v-model="selectedJoint.origin.xyz[2]" size="small" :step="0.001" :precision="4"
             controls-position="right" style="width: 90px" />
         </div>
         <div class="detail-row">
           <span class="row-label">rpy:</span>
-          <el-input-number v-model="selectedJoint.origin.rpy[0]" size="small" :step="0.01" :precision="4"
+          <el-input-number
+v-model="selectedJoint.origin.rpy[0]" size="small" :step="0.01" :precision="4"
             controls-position="right" style="width: 90px" />
-          <el-input-number v-model="selectedJoint.origin.rpy[1]" size="small" :step="0.01" :precision="4"
+          <el-input-number
+v-model="selectedJoint.origin.rpy[1]" size="small" :step="0.01" :precision="4"
             controls-position="right" style="width: 90px" />
-          <el-input-number v-model="selectedJoint.origin.rpy[2]" size="small" :step="0.01" :precision="4"
+          <el-input-number
+v-model="selectedJoint.origin.rpy[2]" size="small" :step="0.01" :precision="4"
             controls-position="right" style="width: 90px" />
         </div>
       </div>
@@ -77,11 +88,14 @@
         <div class="detail-title">Axis</div>
         <div class="detail-row">
           <span class="row-label">xyz:</span>
-          <el-input-number v-model="selectedJoint.axis[0]" size="small" :step="0.01" :precision="4" :min="-1" :max="1"
+          <el-input-number
+v-model="selectedJoint.axis[0]" size="small" :step="0.01" :precision="4" :min="-1" :max="1"
             controls-position="right" style="width: 90px" />
-          <el-input-number v-model="selectedJoint.axis[1]" size="small" :step="0.01" :precision="4" :min="-1" :max="1"
+          <el-input-number
+v-model="selectedJoint.axis[1]" size="small" :step="0.01" :precision="4" :min="-1" :max="1"
             controls-position="right" style="width: 90px" />
-          <el-input-number v-model="selectedJoint.axis[2]" size="small" :step="0.01" :precision="4" :min="-1" :max="1"
+          <el-input-number
+v-model="selectedJoint.axis[2]" size="small" :step="0.01" :precision="4" :min="-1" :max="1"
             controls-position="right" style="width: 90px" />
         </div>
       </div>
@@ -90,22 +104,26 @@
         <div class="detail-title">Limits</div>
         <div class="detail-row">
           <span class="row-label">lower:</span>
-          <el-input-number v-model="selectedJoint.limits.lower" size="small" :step="0.1" :precision="4"
+          <el-input-number
+v-model="selectedJoint.limits.lower" size="small" :step="0.1" :precision="4"
             controls-position="right" style="width: 120px" />
         </div>
         <div class="detail-row">
           <span class="row-label">upper:</span>
-          <el-input-number v-model="selectedJoint.limits.upper" size="small" :step="0.1" :precision="4"
+          <el-input-number
+v-model="selectedJoint.limits.upper" size="small" :step="0.1" :precision="4"
             controls-position="right" style="width: 120px" />
         </div>
         <div class="detail-row">
           <span class="row-label">effort:</span>
-          <el-input-number v-model="selectedJoint.limits.effort" size="small" :step="1" :precision="1"
+          <el-input-number
+v-model="selectedJoint.limits.effort" size="small" :step="1" :precision="1"
             controls-position="right" style="width: 120px" />
         </div>
         <div class="detail-row">
           <span class="row-label">velocity:</span>
-          <el-input-number v-model="selectedJoint.limits.velocity" size="small" :step="0.1" :precision="2"
+          <el-input-number
+v-model="selectedJoint.limits.velocity" size="small" :step="0.1" :precision="2"
             controls-position="right" style="width: 120px" />
         </div>
       </div>

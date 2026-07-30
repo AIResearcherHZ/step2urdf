@@ -1,19 +1,7 @@
 <template>
   <div class="link-properties" v-if="link">
-    <!-- 连杆名称 -->
-    <!-- <div class="link-name-row">
-      <el-icon class="link-icon">
-        <Box />
-      </el-icon>
-      <el-input v-if="editingName" v-model="nameInput" autofocus @blur="finishRename" @keydown.enter="finishRename"
-        @keydown.escape="cancelRename" style="flex: 1" />
-      <span v-else class="link-name" @dblclick="startRename">{{ link.name }}</span>
-      <el-tag v-if="urdfStore.isBaseLink(link.id)" type="info">root</el-tag>
-    </div> -->
 
-    <!-- Base Link 坐标基点（仅 root link 显示）-->
     <div v-if="urdfStore.isBaseLink(link.id)" class="base-origin-section">
-      <!-- 标题行：名称 + 状态标签 -->
       <div class="base-origin-header">
         <span class="base-origin-title">🌐 基坐标系原点</span>
         <el-tag :type="urdfStore.baseLinkOrigin ? 'success' : 'warning'" effect="light">
@@ -21,37 +9,23 @@
         </el-tag>
       </div>
 
-      <!-- 提示：已绑定 Solid 但未设置基点 -->
-      <el-alert v-if="link.solidIds.length > 0 && !urdfStore.baseLinkOrigin" title="已绑定 Solid，请设置坐标基点以定义运动树计算起点"
+      <el-alert
+v-if="link.solidIds.length > 0 && !urdfStore.baseLinkOrigin" title="已绑定 Solid，请设置坐标基点以定义运动树计算起点"
         type="warning" :closable="false" show-icon class="base-origin-alert" />
 
-      <!-- XYZ 可编辑输入 -->
       <div class="origin-rows">
         <div class="origin-row" v-for="(ax, idx) in axisConfig" :key="ax.key">
           <span class="origin-axis-lbl" :style="{ color: ax.color }">{{ ax.key }}</span>
-          <el-input-number :model-value="editableOrigin[idx]"
+          <el-input-number
+:model-value="editableOrigin[idx]"
             @update:model-value="(v: number | undefined) => onAxisInput(idx, v ?? 0)" :precision="4" :step="0.001"
             controls-position="right" style="flex: 1; min-width: 0" />
         </div>
       </div>
 
-      <!-- 操作按钮 -->
       <div class="origin-actions">
-        <!-- 向上轴选择 -->
-        <div class="up-axis-row">
-          <span class="up-axis-lbl">向上轴</span>
-          <el-radio-group v-model="baseUpAxis">
-            <el-radio-button value="Y+">+Y</el-radio-button>
-            <el-radio-button value="Z+">+Z</el-radio-button>
-            <el-radio-button value="X+">+X</el-radio-button>
-            <el-radio-button value="Y-">-Y</el-radio-button>
-            <el-radio-button value="Z-">-Z</el-radio-button>
-            <el-radio-button value="X-">-X</el-radio-button>
-          </el-radio-group>
-        </div>
-        <!-- 功能按钮行 -->
         <div class="origin-btn-row">
-          <el-tooltip content="根据已绑定 Solid 的包围盒底面中心自动计算" placement="top">
+          <el-tooltip content="按 Z-up 约定取已绑定 Solid 包围盒的底面中心（最小 Z）" placement="top">
             <el-button type="primary" plain :disabled="link.solidIds.length === 0" @click="autoCalcOrigin">
               自动计算
             </el-button>
@@ -62,42 +36,28 @@
         </div>
       </div>
 
-      <!-- 基坐标系 RPY 姿态（仅在已设置原点后显示）-->
-      <div v-if="urdfStore.baseLinkOrigin" class="orientation-section">
-        <div class="orient-header">
-          <span class="base-origin-title">基坐标系 RPY（rad）</span>
-          <el-button text @click="resetRPY">重置</el-button>
-        </div>
-        <div class="origin-rows">
-          <div class="origin-row" v-for="(ax, idx) in rpyConfig" :key="ax.key">
-            <span class="origin-axis-lbl" :style="{ color: ax.color }">{{ ax.key }}</span>
-            <el-input-number :model-value="editableRPY[idx]"
-              @update:model-value="(v: number | undefined) => onRPYInput(idx, v ?? 0)" :precision="4" :step="0.01"
-              controls-position="right" style="flex: 1; min-width: 0" />
-          </div>
-        </div>
-      </div>
     </div>
 
     <el-collapse v-model="openPanels">
-      <!-- 绑定 Solid -->
       <el-collapse-item name="solids">
         <template #title>
           <span class="section-title">绑定 Solids（{{ link.solidIds.length }}）</span>
         </template>
         <div class="prop-form">
-          <!-- 已绑定列表 -->
           <div v-for="solidId in link.solidIds" :key="solidId" class="solid-item">
             <el-icon>
               <Files />
             </el-icon>
             <span class="solid-name" :title="getSolidName(solidId)">{{ getSolidName(solidId) }}</span>
+            <span v-if="getSolidMass(solidId) !== null" class="solid-mass">
+              {{ getSolidMass(solidId)!.toFixed(3) }} kg
+            </span>
             <el-button text type="danger" :icon="Delete" @click="handleUnbind(solidId)" class="unbind-btn" />
           </div>
 
-          <!-- 绑定新 Solid 按钮 -->
           <div class="bind-actions">
-            <el-button v-if="!urdfStore.bindingMode.active" type="primary" plain :icon="Paperclip"
+            <el-button
+v-if="!urdfStore.bindingMode.active" type="primary" plain :icon="Paperclip"
               @click="urdfStore.startBindingMode(link.id)">
               绑定 Solid
             </el-button>
@@ -110,7 +70,6 @@
         </div>
       </el-collapse-item>
 
-      <!-- 物理属性（默认收起） -->
       <el-collapse-item name="physics">
         <template #title>
           <span class="section-title">物理属性</span>
@@ -120,6 +79,12 @@
             <div class="prop-row">
               <span class="prop-label">质量</span>
               <span class="prop-value">{{ link.inertial.mass.toFixed(4) }} kg</span>
+            </div>
+            <div class="prop-row">
+              <span class="prop-label">质心</span>
+              <span class="prop-value">
+                {{ link.inertial.com.map(v => v.toFixed(2)).join(', ') }} mm
+              </span>
             </div>
             <div class="inertia-grid">
               <span class="inertia-title">惯性张量（kg·m²）</span>
@@ -143,46 +108,26 @@
   </div>
 
   <div v-else class="empty-hint">未选中任何连杆</div>
+
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Box, Files, Delete, Paperclip } from '@element-plus/icons-vue'
+import { Files, Delete, Paperclip } from '@element-plus/icons-vue'
 import { useURDFStore } from '../../stores/useURDFStore'
 import { useStepViewerStore } from '../../stores/useStepViewerStore'
 
 const urdfStore = useURDFStore()
 const stepStore = useStepViewerStore()
 
-const openPanels = ref<string[]>(['solids', 'physics']) // 默认展开的面板
+const openPanels = ref<string[]>(['solids', 'physics'])
 
 const link = computed(() => {
   if (!urdfStore.selectedLinkId) return null
   return urdfStore.linkMap.get(urdfStore.selectedLinkId) ?? null
 })
 
-// ——— 重命名 ———
-const editingName = ref(false)
-const nameInput = ref('')
-
-function startRename(): void {
-  nameInput.value = link.value?.name ?? ''
-  editingName.value = true
-}
-
-function finishRename(): void {
-  if (link.value && nameInput.value.trim()) {
-    urdfStore.renameLink(link.value.id, nameInput.value.trim())
-  }
-  editingName.value = false
-}
-
-function cancelRename(): void {
-  editingName.value = false
-}
-
-// ——— Solid 操作 ———
 function handleUnbind(solidId: string): void {
   if (link.value) urdfStore.unbindSolid(link.value.id, solidId)
 }
@@ -191,35 +136,22 @@ function getSolidName(solidId: string): string {
   return stepStore.solidMap.get(solidId)?.name ?? solidId
 }
 
-// ——— Base Origin ———
+function getSolidMass(solidId: string): number | null {
+  const m = link.value?.solidMasses?.[solidId]
+  return typeof m === 'number' && m > 0 ? m : null
+}
+
 const axisConfig = [
   { key: 'X', color: '#f56c6c' },
   { key: 'Y', color: '#67c23a' },
   { key: 'Z', color: '#409eff' }
 ]
 
-/** RPY 输入标签：R=roll绕X, P=pitch绕Y, Y=yaw绕Z */
-const rpyConfig = [
-  { key: 'R', color: '#f56c6c' },
-  { key: 'P', color: '#67c23a' },
-  { key: 'Y', color: '#409eff' }
-]
-
-/** 底面运动方向（即哪个轴指向上），自动计算时利用这个轴的最小导 OR 最大导作为底面 */
-const baseUpAxis = ref<'Y+' | 'Y-' | 'Z+' | 'Z-' | 'X+' | 'X-'>('Y+')
-
 const editableOrigin = ref<[number, number, number]>([0, 0, 0])
-const editableRPY = ref<[number, number, number]>([0, 0, 0])
 
 watch(
   () => urdfStore.baseLinkOrigin,
   (v) => { editableOrigin.value = v ? [...v] as [number, number, number] : [0, 0, 0] },
-  { immediate: true, deep: true }
-)
-
-watch(
-  () => urdfStore.baseLinkRPY,
-  (v) => { editableRPY.value = v ? [...v] as [number, number, number] : [0, 0, 0] },
   { immediate: true, deep: true }
 )
 
@@ -230,24 +162,11 @@ function onAxisInput(idx: number, val: number): void {
   urdfStore.baseLinkOrigin = [...o] as [number, number, number]
 }
 
-function onRPYInput(idx: number, val: number): void {
-  const d: [number, number, number] = [...editableRPY.value] as [number, number, number]
-  d[idx] = val
-  editableRPY.value = d
-  urdfStore.baseLinkRPY = [...d] as [number, number, number]
-}
-
-function resetRPY(): void {
-  urdfStore.baseLinkRPY = [0, 0, 0]
-}
-
 function clearBaseOrigin(): void {
   urdfStore.baseLinkOrigin = null
   urdfStore.baseLinkRPY = null
 }
 
-/** 根据已绑定 Solid 的包围盒自动计算底面中心作为基点
- *  底面 = baseUpAxis 方向的最小/最大截面中心 */
 function autoCalcOrigin(): void {
   if (!link.value || link.value.solidIds.length === 0) return
   let xMin = Infinity, yMin = Infinity, zMin = Infinity
@@ -265,37 +184,13 @@ function autoCalcOrigin(): void {
   }
   if (!found) { ElMessage.warning('未找到有效几何数据'); return }
   const round = (v: number) => Math.round(v * 10000) / 10000
-  const cx = (xMin + xMax) / 2, cy = (yMin + yMax) / 2, cz = (zMin + zMax) / 2
-  let ox: number, oy: number, oz: number
-  switch (baseUpAxis.value) {
-    case 'Y+': ox = cx; oy = yMin; oz = cz; break
-    case 'Y-': ox = cx; oy = yMax; oz = cz; break
-    case 'Z+': ox = cx; oy = cy; oz = zMin; break
-    case 'Z-': ox = cx; oy = cy; oz = zMax; break
-    case 'X+': ox = xMin; oy = cy; oz = cz; break
-    case 'X-': ox = xMax; oy = cy; oz = cz; break
-    default: ox = cx; oy = yMin; oz = cz; break
-  }
+  const cx = (xMin + xMax) / 2, cy = (yMin + yMax) / 2
+  const ox = cx, oy = cy, oz = zMin
   urdfStore.baseLinkOrigin = [round(ox), round(oy), round(oz)]
 
-  // 根据向上轴设置基坐标系 RPY 姿态（ZYX 顺序，与 URDF rpy 约定一致）
-  // 数学验证：R = Rz(yaw)·Ry(pitch)·Rx(roll)·[0,0,1]
-  // Z+: identity → [0,0,0]  Z-: Ry(π) → [0,π,0]
-  // Y+: Rx(-π/2) → [-π/2,0,0]  Y-: Rx(π/2) → [π/2,0,0]
-  // X+: Ry(π/2) → [0,π/2,0]   X-: Ry(-π/2) → [0,-π/2,0]
-  const rpyMap: Record<string, [number, number, number]> = {
-    'Z+': [0, 0, 0],
-    'Z-': [0, Math.PI, 0],
-    'Y+': [-Math.PI / 2, 0, 0],
-    'Y-': [Math.PI / 2, 0, 0],
-    'X+': [0, Math.PI / 2, 0],
-    'X-': [0, -Math.PI / 2, 0]
-  }
-  urdfStore.baseLinkRPY = rpyMap[baseUpAxis.value] ?? [0, 0, 0]
-  ElMessage.success(`已自动设置基点（${baseUpAxis.value} 底面中心）`)
+  urdfStore.baseLinkRPY = [0, 0, 0]
+  ElMessage.success('已自动设置基点（包围盒底面中心）')
 }
-
-// ——— 惯性计算已移至 ViewControls.vue 整机惯量对话框 ———
 </script>
 
 <style lang="scss" scoped>
@@ -334,7 +229,6 @@ function autoCalcOrigin(): void {
   }
 }
 
-/* Collapse */
 :deep(.el-collapse) {
   border: none;
 
@@ -423,6 +317,13 @@ function autoCalcOrigin(): void {
     min-height: unset !important;
     flex-shrink: 0;
   }
+
+  .solid-mass {
+    font-size: 10px;
+    color: #67c23a;
+    font-family: monospace;
+    flex-shrink: 0;
+  }
 }
 
 .bind-actions {
@@ -464,7 +365,6 @@ function autoCalcOrigin(): void {
   padding: 8px 0;
 }
 
-/* Base Origin 区域 */
 .base-origin-section {
   margin-bottom: 8px;
   padding: 6px 8px 8px;
@@ -524,34 +424,11 @@ function autoCalcOrigin(): void {
   gap: 5px;
 }
 
-.up-axis-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.up-axis-lbl {
-  font-size: 16px;
-  color: #606266;
-  flex-shrink: 0;
-}
-
-:deep(.up-axis-row .el-radio-button__inner) {
-  padding: 2px 6px;
-  font-size: 16px;
-}
-
 .origin-btn-row {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
-}
-
-.orientation-section {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed #b3d8f5;
 }
 
 .orient-header {

@@ -15,7 +15,8 @@
 
     <!-- 树形内容区 -->
     <div class="panel-content">
-      <el-tree ref="treeRef" :data="urdfStore.treeData" node-key="id" :default-expand-all="true" highlight-current
+      <el-tree
+ref="treeRef" :data="urdfStore.treeData" node-key="id" :default-expand-all="true" highlight-current
         :expand-on-click-node="false" empty-text="暂无结构，点击 Add Link 创建根连杆" @node-click="handleNodeClick">
         <template #default="{ data }">
           <div class="tree-node-row" :class="[data.nodeType, { 'is-base': data.isBase }]">
@@ -26,14 +27,16 @@
             </el-icon>
 
             <!-- 节点名称（Link / Joint 支持内联重命名） -->
-            <el-input v-if="editingId === data.id" v-model="editingName" size="small" @blur="finishRename(data)"
+            <el-input
+v-if="editingId === data.id" v-model="editingName" size="small" @blur="finishRename(data)"
               @keydown.enter.stop="finishRename(data)" @keydown.escape.stop="cancelRename" @click.stop autofocus
               class="rename-input" />
             <span v-else class="node-label" :title="data.label">{{ data.label }}</span>
 
             <!-- 徽标 -->
             <el-tag v-if="data.isBase" size="small" type="info" class="node-badge">root</el-tag>
-            <el-tag v-else-if="data.nodeType === 'joint'" size="small" :type="getJointTagType(data.jointType)"
+            <el-tag
+v-else-if="data.nodeType === 'joint'" size="small" :type="getJointTagType(data.jointType)"
               class="node-badge">{{ data.jointType }}</el-tag>
             <span v-if="data.nodeType === 'link' && data.solidCount > 0" class="solid-count">{{ data.solidCount
             }}s</span>
@@ -53,7 +56,8 @@
                 <el-button class="node-btn" size="small" text :icon="Edit" @click.stop="startRename(data)" />
               </el-tooltip>
               <el-tooltip v-if="!data.isBase" content="删除连杆" placement="top" :show-after="600">
-                <el-button class="node-btn node-btn--danger" size="small" text :icon="Delete"
+                <el-button
+class="node-btn node-btn--danger" size="small" text :icon="Delete"
                   @click.stop="handleDeleteLink(data)" />
               </el-tooltip>
             </template>
@@ -62,7 +66,8 @@
                 <el-button class="node-btn" size="small" text :icon="Edit" @click.stop="startRename(data)" />
               </el-tooltip>
               <el-tooltip content="删除关节" placement="top" :show-after="600">
-                <el-button class="node-btn node-btn--danger" size="small" text :icon="Delete"
+                <el-button
+class="node-btn node-btn--danger" size="small" text :icon="Delete"
                   @click.stop="handleDeleteJoint(data)" />
               </el-tooltip>
             </template>
@@ -73,7 +78,9 @@
 
     <!-- 控件区（30%） -->
     <div class="controls-section">
-      <ViewControls />
+      <ViewControls
+        @rotate-to-z-up="(up: UpAxis) => $emit('rotateToZUp', up)"
+        @reset-orientation="$emit('resetOrientation')" />
     </div>
 
     <!-- 底部操作 -->
@@ -99,9 +106,12 @@ import { useURDFStore } from '../../stores/useURDFStore'
 import type { URDFTreeNode } from '../../stores/useURDFStore'
 import type { JointType } from '../../types'
 import ViewControls from './ViewControls.vue'
+import type { UpAxis } from '../../core/ZUpTransform'
 
 defineEmits<{
   (e: 'exportUrdf'): void
+  (e: 'rotateToZUp', up: UpAxis): void
+  (e: 'resetOrientation'): void
 }>()
 
 const urdfStore = useURDFStore()

@@ -47,10 +47,10 @@
 import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
-    visible: boolean
-    progress: number
-    message: string
-    status: 'idle' | 'uploading' | 'parsing' | 'success' | 'error'
+    visible?: boolean
+    progress?: number
+    message?: string
+    status?: 'idle' | 'uploading' | 'parsing' | 'success' | 'error'
     fileName?: string
 }>(), {
     visible: false,
