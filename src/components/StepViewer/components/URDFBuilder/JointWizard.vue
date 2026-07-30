@@ -87,6 +87,10 @@ v-model="axis[2]" size="small" :step="0.01" :precision="6" :min="-1" :max="1"
           <el-select v-model="jointType" size="small" style="flex:1">
             <el-option label="Revolute" value="revolute" />
             <el-option label="Prismatic" value="prismatic" />
+            <el-option label="Continuous" value="continuous" />
+            <el-option label="Ball（球关节）" value="ball" />
+            <el-option label="Planar（平面）" value="planar" />
+            <el-option label="Floating（自由）" value="floating" />
             <el-option label="Fixed" value="fixed" />
             <el-option label="Continuous" value="continuous" />
           </el-select>

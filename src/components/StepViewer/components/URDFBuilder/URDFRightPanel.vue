@@ -22,6 +22,18 @@
     <!-- 分隔线 -->
     <div class="section-divider" />
 
+    <!-- ===== 闭链约束 ===== -->
+    <div class="panel-section loops-section">
+      <div class="section-header">
+        <span class="section-title">闭链 / 约束</span>
+      </div>
+      <div class="section-body">
+        <LoopsModule />
+      </div>
+    </div>
+
+    <div class="section-divider" />
+
     <!-- ===== 下部：关节控制打开按钮 ===== -->
     <div class="fk-launch-bar">
       <el-button type="primary" plain @click="$emit('toggleFKPanel')">
@@ -39,6 +51,7 @@ import { Connection } from '@element-plus/icons-vue'
 import { useURDFStore } from '../../stores/useURDFStore'
 import URDFJointProperties from './URDFJointProperties.vue'
 import URDFLinkProperties from './URDFLinkProperties.vue'
+import LoopsModule from './LoopsModule.vue'
 
 defineEmits<{
   (e: 'toggleFKPanel'): void
@@ -81,6 +94,11 @@ const contextTitle = computed(() => {
   &.expanded {
     flex: 1;
   }
+}
+
+.loops-section {
+  max-height: 40%;
+  flex-shrink: 0;
 }
 
 .section-divider {

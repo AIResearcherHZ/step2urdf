@@ -147,6 +147,7 @@ export class ForwardKinematics {
 
     switch (joint.type) {
       case 'revolute':
+      case 'continuous':
         jointMotion.makeRotationAxis(axis, joint.currentValue)
         break
       case 'prismatic':
@@ -156,6 +157,16 @@ export class ForwardKinematics {
           axis.z * joint.currentValue
         )
         break
+      case 'ball': {
+        const [bx, by, bz] = joint.ballValue || [0, 0, 0]
+        jointMotion.makeRotationFromEuler(new THREE.Euler(bx, by, bz, 'ZYX'))
+        break
+      }
+      case 'planar': {
+        jointMotion.makeRotationAxis(axis, joint.currentValue)
+        break
+      }
+      case 'floating':
       case 'fixed':
         // 恒等变换
         break

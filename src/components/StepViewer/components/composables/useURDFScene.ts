@@ -6,6 +6,7 @@ import { JointSnapVisualizer } from '../../core/JointSnapVisualizer'
 import { computeRelativeTransform } from '../../core/useKinematicsWorker'
 import { exportURDFInWorker, disposeExportWorker } from '../../core/useExportWorker'
 import { serializeURDF } from '../../core/URDFSerializer'
+import { serializeMJCF } from '../../core/MJCFSerializer'
 import { distributeInertia, type LinkInertiaInput } from '../../core/InertiaDistribution'
 import { useStepViewerStore } from '../../stores/useStepViewerStore'
 import { useURDFStore } from '../../stores/useURDFStore'
@@ -306,12 +307,15 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         linkRestInverses.set(urdfStore.BASE_LINK_ID, basePoseInverseForExport)
       }
 
-      const urdfXml = serializeURDF(urdfStore.robot, {
+      const format = urdfStore.exportFormat
+      const serializeOptions = {
         linkRestInverses,
         unitScale: 0.001,
         basePoseInverse: basePoseInverseForExport,
         baseLinkId: urdfStore.BASE_LINK_ID
-      })
+      }
+
+      const urdfXml = format === 'mjcf' ? '' : serializeURDF(urdfStore.robot, serializeOptions)
 
       const linkSolidMap: Record<string, import('../../types').SerializedSolidData[]> = {}
       const linkRestInverseMap: Record<string, number[]> = {}
@@ -330,12 +334,22 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         }
       }
 
+      const extraFiles: Record<string, string> = {}
+      if (format !== 'urdf') {
+        extraFiles['robot.xml'] = serializeMJCF(urdfStore.robot, {
+          ...serializeOptions,
+          meshDir: 'meshes',
+          meshLinkNames: new Set(Object.keys(linkSolidMap))
+        })
+      }
+
       const zipBuffer = await exportURDFInWorker(
         urdfXml,
         linkSolidMap,
         linkRestInverseMap,
         0.001,
-        (stage) => { urdfStore.exportProgress = stage }
+        (stage) => { urdfStore.exportProgress = stage },
+        extraFiles
       )
 
       const blob = new Blob([zipBuffer], { type: 'application/zip' })
@@ -346,7 +360,8 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
       a.click()
       URL.revokeObjectURL(url)
 
-      ElMessage.success('URDF 导出成功')
+      const label = format === 'urdf' ? 'URDF' : format === 'mjcf' ? 'MJCF' : 'URDF + MJCF'
+      ElMessage.success(`${label} 导出成功`)
       exportCompleteAdVisible.value = true
     } catch (err) {
       ElMessage.error(`导出失败: ${(err as Error).message}`)

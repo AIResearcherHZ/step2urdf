@@ -24,10 +24,8 @@
           </div>
           <div class="prop-row">
             <span class="prop-label">类型</span>
-            <el-select v-model="joint.type" size="small" style="width: 130px" @change="handleTypeChange">
-              <el-option label="Revolute（旋转）" value="revolute" />
-              <el-option label="Prismatic（移动）" value="prismatic" />
-              <el-option label="Fixed（固定）" value="fixed" />
+            <el-select v-model="joint.type" size="small" style="width: 150px" @change="handleTypeChange">
+              <el-option v-for="opt in JOINT_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
           </div>
         </div>
@@ -140,7 +138,7 @@ v-model="joint.axisOffset[2]" size="small" :step="0.001" :precision="4"
         </div>
       </el-collapse-item>
 
-      <el-collapse-item v-if="joint.type !== 'fixed'" name="limits">
+      <el-collapse-item v-if="showLimits" name="limits">
         <template #title>
           <span class="section-title">限制 (Limits)</span>
         </template>
@@ -148,30 +146,30 @@ v-model="joint.axisOffset[2]" size="small" :step="0.001" :precision="4"
           <div class="prop-row">
             <span class="prop-label">下限</span>
             <el-input-number
-v-model="joint.limits.lower" size="small" :step="joint.type === 'prismatic' ? 1 : 0.1"
+v-model="joint.limits.lower" size="small" :step="isLinearJoint ? 1 : 0.1"
               :precision="3" controls-position="right" style="width: 120px" />
-            <span class="prop-unit">{{ joint.type === 'prismatic' ? 'mm' : 'rad' }}</span>
+            <span class="prop-unit">{{ isLinearJoint ? 'mm' : 'rad' }}</span>
           </div>
           <div class="prop-row">
             <span class="prop-label">上限</span>
             <el-input-number
-v-model="joint.limits.upper" size="small" :step="joint.type === 'prismatic' ? 1 : 0.1"
+v-model="joint.limits.upper" size="small" :step="isLinearJoint ? 1 : 0.1"
               :precision="3" controls-position="right" style="width: 120px" />
-            <span class="prop-unit">{{ joint.type === 'prismatic' ? 'mm' : 'rad' }}</span>
+            <span class="prop-unit">{{ isLinearJoint ? 'mm' : 'rad' }}</span>
           </div>
           <div class="prop-row">
             <span class="prop-label">力度</span>
             <el-input-number
 v-model="joint.limits.effort" size="small" :step="1" :precision="1"
               controls-position="right" style="width: 120px" />
-            <span class="prop-unit">{{ joint.type === 'prismatic' ? 'N' : 'N·m' }}</span>
+            <span class="prop-unit">{{ isLinearJoint ? 'N' : 'N·m' }}</span>
           </div>
           <div class="prop-row">
             <span class="prop-label">速度</span>
             <el-input-number
-v-model="joint.limits.velocity" size="small" :step="joint.type === 'prismatic' ? 1 : 0.1"
+v-model="joint.limits.velocity" size="small" :step="isLinearJoint ? 1 : 0.1"
               :precision="2" controls-position="right" style="width: 120px" />
-            <span class="prop-unit">{{ joint.type === 'prismatic' ? 'mm/s' : 'rad/s' }}</span>
+            <span class="prop-unit">{{ isLinearJoint ? 'mm/s' : 'rad/s' }}</span>
           </div>
         </div>
       </el-collapse-item>
@@ -189,6 +187,7 @@ import { ElMessage } from 'element-plus'
 import { useURDFStore } from '../../stores/useURDFStore'
 import { flipRPY, type FrameAxis } from '../../core/AxisFrame'
 import { applyWorldAlignedJointFrame } from '../../core/ZUpTransform'
+import { JOINT_TYPE_OPTIONS, isLimitedJoint } from '../../types'
 import type { JointType } from '../../types'
 
 const urdfStore = useURDFStore()
@@ -208,9 +207,13 @@ const childLinkName = computed(() =>
   joint.value ? (urdfStore.linkMap.get(joint.value.childLinkId)?.name ?? joint.value.childLinkId) : ''
 )
 
+const isLinearJoint = computed(() => joint.value?.type === 'prismatic' || joint.value?.type === 'planar')
+
+const showLimits = computed(() => !!joint.value && isLimitedJoint(joint.value.type))
+
 function handleTypeChange(type: JointType): void {
   if (!joint.value) return
-  const defaultLimits = type === 'prismatic'
+  const defaultLimits = type === 'prismatic' || type === 'planar'
     ? { lower: -100, upper: 100, effort: 100, velocity: 100 }
     : { lower: -3.14159, upper: 3.14159, effort: 10, velocity: 1 }
   urdfStore.updateJoint(joint.value.id, { type, limits: defaultLimits })

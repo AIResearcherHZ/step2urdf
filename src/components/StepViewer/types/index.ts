@@ -248,7 +248,47 @@ export interface ToolbarConfig {
   showReset: boolean
 }
 
-export type JointType = 'revolute' | 'prismatic' | 'fixed'
+export type JointType =
+  | 'revolute'
+  | 'continuous'
+  | 'prismatic'
+  | 'fixed'
+  | 'ball'
+  | 'floating'
+  | 'planar'
+
+export const JOINT_TYPE_OPTIONS: { value: JointType; label: string }[] = [
+  { value: 'revolute', label: 'Revolute（旋转）' },
+  { value: 'continuous', label: 'Continuous（连续旋转）' },
+  { value: 'prismatic', label: 'Prismatic（移动）' },
+  { value: 'ball', label: 'Ball（球关节）' },
+  { value: 'planar', label: 'Planar（平面）' },
+  { value: 'floating', label: 'Floating（自由）' },
+  { value: 'fixed', label: 'Fixed（固定）' }
+]
+
+export function isMultiDofJoint(type: JointType): boolean {
+  return type === 'ball' || type === 'floating' || type === 'planar'
+}
+
+export function isLimitedJoint(type: JointType): boolean {
+  return type === 'revolute' || type === 'prismatic' || type === 'ball'
+}
+
+export type LoopConstraintType = 'connect' | 'weld'
+
+export interface LoopClosure {
+  id: string
+  name: string
+  type: LoopConstraintType
+  linkAId: string
+  linkBId: string
+  anchor: [number, number, number]
+  solref: [number, number]
+  enabled: boolean
+}
+
+export type ExportFormat = 'urdf' | 'mjcf' | 'both'
 
 export interface InertialParams {
   mass: number
@@ -306,12 +346,14 @@ export interface URDFJoint {
   axisOffset: [number, number, number]
   limits: JointLimits
   currentValue: number
+  ballValue?: [number, number, number]
 }
 
 export interface URDFRobot {
   name: string
   links: URDFLink[]
   joints: URDFJoint[]
+  loops: LoopClosure[]
 }
 
 export type JointWizardStep = 'select-links' | 'pick-edge' | 'adjust-origin' | 'set-type'

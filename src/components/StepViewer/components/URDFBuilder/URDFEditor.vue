@@ -2,10 +2,14 @@
   <Teleport to="body">
     <div v-show="urdfStore.urdfEditorVisible" ref="editorWrapper" class="urdf-editor-wrapper" :style="wrapperStyle">
       <div ref="dragHandle" class="editor-header" @mousedown="startDrag">
-        <span class="editor-title">📝 URDF Editor</span>
+        <span class="editor-title">📝 {{ viewFormat === 'urdf' ? 'URDF' : 'MJCF' }} Editor</span>
         <div class="header-actions">
-          <el-button size="small" text @click="handleSave" title="下载 .urdf 文件">💾 保存</el-button>
-          <el-button size="small" type="primary" text @click="handleApply">应用</el-button>
+          <el-radio-group v-model="viewFormat" size="small" @mousedown.stop>
+            <el-radio-button value="urdf">URDF</el-radio-button>
+            <el-radio-button value="mjcf">MJCF</el-radio-button>
+          </el-radio-group>
+          <el-button size="small" text @click="handleSave" title="下载文件">💾 保存</el-button>
+          <el-button size="small" type="primary" text :disabled="viewFormat === 'mjcf'" @click="handleApply">应用</el-button>
           <el-button size="small" text @click="urdfStore.urdfEditorVisible = false">关闭</el-button>
         </div>
       </div>
@@ -38,10 +42,12 @@ import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { ElMessage } from 'element-plus'
 import { useURDFStore } from '../../stores/useURDFStore'
 import { serializeURDF, deserializeURDF } from '../../core/URDFSerializer'
+import { serializeMJCF } from '../../core/MJCFSerializer'
 
 const urdfStore = useURDFStore()
 
 const urdfXml = ref('')
+const viewFormat = ref<'urdf' | 'mjcf'>('urdf')
 const monacoRef = ref()
 const position = reactive({ x: 100, y: 100 })
 const size = reactive({ width: 600, height: 500 })
@@ -69,10 +75,18 @@ const wrapperStyle = computed<CSSProperties>(() => ({
 }))
 
 // 当编辑器打开时，用 store 生成 URDF XML
+function regenerate(): void {
+  urdfXml.value = viewFormat.value === 'mjcf'
+    ? serializeMJCF(urdfStore.robot)
+    : serializeURDF(urdfStore.robot)
+}
+
 watch(() => urdfStore.urdfEditorVisible, (visible) => {
-  if (visible) {
-    urdfXml.value = serializeURDF(urdfStore.robot)
-  }
+  if (visible) regenerate()
+})
+
+watch(viewFormat, () => {
+  if (urdfStore.urdfEditorVisible) regenerate()
 })
 
 /** 在光标位置插入文本 */
@@ -90,6 +104,10 @@ function insertText(text: string): void {
 }
 
 function handleApply(): void {
+  if (viewFormat.value === 'mjcf') {
+    ElMessage.warning('MJCF 为只读预览，请切换到 URDF 后再应用')
+    return
+  }
   try {
     const imported = deserializeURDF(urdfXml.value)
     urdfStore.importRobot(imported)
@@ -104,10 +122,12 @@ function handleSave(): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${urdfStore.robot.name || 'robot'}.urdf`
+  a.download = viewFormat.value === 'mjcf'
+    ? `${urdfStore.robot.name || 'robot'}.xml`
+    : `${urdfStore.robot.name || 'robot'}.urdf`
   a.click()
   URL.revokeObjectURL(url)
-  ElMessage.success('URDF 文件已下载')
+  ElMessage.success('文件已下载')
 }
 
 // ==== 拖拽 ====

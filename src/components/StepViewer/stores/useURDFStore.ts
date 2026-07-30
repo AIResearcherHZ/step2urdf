@@ -10,13 +10,17 @@ import type {
   JointLimits,
   InertialParams,
   BindingModeState,
-  JointWizardStep
+  JointWizardStep,
+  LoopClosure,
+  LoopConstraintType,
+  ExportFormat
 } from '../types'
 
 const BASE_LINK_ID = 'link_base'
 
 let _nextLinkId = 1
 let _nextJointId = 1
+let _nextLoopId = 1
 
 export interface URDFTreeNode {
   id: string
@@ -34,8 +38,12 @@ export const useURDFStore = defineStore('urdf', () => {
     links: [
       { id: BASE_LINK_ID, name: 'base_link', solidIds: [], inertial: null }
     ],
-    joints: []
+    joints: [],
+    loops: []
   })
+
+  const exportFormat = ref<ExportFormat>('both')
+  const loopAnchorPickId = ref<string | null>(null)
 
   const exporting = ref(false)
   const exportProgress = ref('')
@@ -272,15 +280,33 @@ export const useURDFStore = defineStore('urdf', () => {
     }
   }
 
+  function setBallValue(jointId: string, value: [number, number, number]): void {
+    const joint = jointMap.value.get(jointId)
+    if (!joint) return
+    const limit = Math.max(Math.abs(joint.limits.lower), Math.abs(joint.limits.upper))
+    joint.ballValue = value.map(v => Math.max(-limit, Math.min(limit, v))) as [number, number, number]
+  }
+
   function resetJoints(): void {
-    robot.value.joints.forEach(j => { j.currentValue = 0 })
+    robot.value.joints.forEach(j => {
+      j.currentValue = 0
+      if (j.ballValue) j.ballValue = [0, 0, 0]
+    })
   }
 
   function randomizeJoints(): void {
     robot.value.joints.forEach(j => {
-      if (j.type !== 'fixed') {
-        j.currentValue = j.limits.lower + Math.random() * (j.limits.upper - j.limits.lower)
+      if (j.type === 'fixed' || j.type === 'floating') return
+      if (j.type === 'ball') {
+        const limit = Math.max(Math.abs(j.limits.lower), Math.abs(j.limits.upper))
+        j.ballValue = [
+          (Math.random() * 2 - 1) * limit,
+          (Math.random() * 2 - 1) * limit,
+          (Math.random() * 2 - 1) * limit
+        ]
+        return
       }
+      j.currentValue = j.limits.lower + Math.random() * (j.limits.upper - j.limits.lower)
     })
   }
 
@@ -296,6 +322,48 @@ export const useURDFStore = defineStore('urdf', () => {
     if (link) {
       link.solidMasses = { ...masses }
     }
+  }
+
+  function addLoop(config: {
+    type: LoopConstraintType
+    linkAId: string
+    linkBId: string
+    anchor?: [number, number, number]
+    name?: string
+  }): { ok: true; loop: LoopClosure } | { ok: false; reason: string } {
+    if (config.linkAId === config.linkBId) {
+      return { ok: false, reason: '闭链约束的两个连杆不能相同' }
+    }
+    const dup = robot.value.loops.find(
+      l => (l.linkAId === config.linkAId && l.linkBId === config.linkBId)
+        || (l.linkAId === config.linkBId && l.linkBId === config.linkAId)
+    )
+    if (dup) {
+      return { ok: false, reason: `这两个连杆之间已存在约束 "${dup.name}"` }
+    }
+    const id = `loop_${_nextLoopId++}`
+    const loop: LoopClosure = {
+      id,
+      name: config.name || `loop_${_nextLoopId - 1}`,
+      type: config.type,
+      linkAId: config.linkAId,
+      linkBId: config.linkBId,
+      anchor: config.anchor || [0, 0, 0],
+      solref: [0.02, 1],
+      enabled: true
+    }
+    robot.value.loops.push(loop)
+    return { ok: true, loop }
+  }
+
+  function removeLoop(loopId: string): void {
+    robot.value.loops = robot.value.loops.filter(l => l.id !== loopId)
+    if (loopAnchorPickId.value === loopId) loopAnchorPickId.value = null
+  }
+
+  function updateLoop(loopId: string, updates: Partial<Omit<LoopClosure, 'id'>>): void {
+    const loop = robot.value.loops.find(l => l.id === loopId)
+    if (loop) Object.assign(loop, updates)
   }
 
   function startBindingMode(linkId: string): void {
@@ -315,6 +383,7 @@ export const useURDFStore = defineStore('urdf', () => {
         inertial: null,
       })
     }
+    if (!imported.loops) imported.loops = []
     robot.value = imported
     selectedLinkId.value = null
     selectedJointId.value = null
@@ -322,6 +391,7 @@ export const useURDFStore = defineStore('urdf', () => {
     basePickMode.value = false
     _nextLinkId = imported.links.length + 1
     _nextJointId = imported.joints.length + 1
+    _nextLoopId = imported.loops.length + 1
   }
 
   function findOrphanLinks(): string[] {
@@ -337,8 +407,10 @@ export const useURDFStore = defineStore('urdf', () => {
       links: [
         { id: BASE_LINK_ID, name: 'base_link', solidIds: [], inertial: null }
       ],
-      joints: []
+      joints: [],
+      loops: []
     }
+    loopAnchorPickId.value = null
     selectedLinkId.value = null
     selectedJointId.value = null
     bindingMode.value = { active: false, targetLinkId: null }
@@ -355,6 +427,7 @@ export const useURDFStore = defineStore('urdf', () => {
     exportProgress.value = ''
     _nextLinkId = 1
     _nextJointId = 1
+    _nextLoopId = 1
   }
 
   return {
@@ -377,6 +450,8 @@ export const useURDFStore = defineStore('urdf', () => {
     baseLinkOrigin,
     baseLinkRPY,
     totalMass,
+    exportFormat,
+    loopAnchorPickId,
 
     linkMap,
     jointMap,
@@ -402,11 +477,16 @@ export const useURDFStore = defineStore('urdf', () => {
     removeJoint,
     updateJoint,
     setJointValue,
+    setBallValue,
     resetJoints,
     randomizeJoints,
 
     setLinkInertial,
     setLinkSolidMasses,
+
+    addLoop,
+    removeLoop,
+    updateLoop,
 
     startBindingMode,
     stopBindingMode,

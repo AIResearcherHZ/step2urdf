@@ -85,8 +85,13 @@ class="node-btn node-btn--danger" size="small" text :icon="Delete"
 
     <!-- 底部操作 -->
     <div class="panel-footer">
+      <el-select v-model="urdfStore.exportFormat" size="default" style="width: 118px">
+        <el-option label="URDF" value="urdf" />
+        <el-option label="MJCF" value="mjcf" />
+        <el-option label="URDF + MJCF" value="both" />
+      </el-select>
       <el-button type="success" :icon="Download" @click="$emit('exportUrdf')">
-        导出 URDF
+        导出
       </el-button>
       <el-button type="primary" :icon="Share" @click="goToURDFCC">
         URDF Studio 预览
@@ -262,7 +267,8 @@ function handleDeleteJoint(data: URDFTreeNode): void {
 // ——— Joint 徽标颜色 ———
 function getJointTagType(type?: JointType): 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   const map: Record<string, 'primary' | 'success' | 'info' | 'warning' | 'danger'> = {
-    revolute: 'primary', prismatic: 'success', fixed: 'info'
+    revolute: 'primary', prismatic: 'success', fixed: 'info',
+    continuous: 'primary', ball: 'warning', planar: 'success', floating: 'danger'
   }
   return map[type ?? ''] ?? 'info'
 }

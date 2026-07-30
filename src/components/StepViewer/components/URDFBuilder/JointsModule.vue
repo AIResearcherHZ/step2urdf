@@ -19,12 +19,9 @@ v-for="joint in urdfStore.robot.joints" :key="joint.id" class="joint-item"
 
         <div class="joint-meta">
           <el-select
-v-model="joint.type" size="small" style="width: 90px" @click.stop
+v-model="joint.type" size="small" style="width: 130px" @click.stop
             @change="(val: any) => handleTypeChange(joint.id, val)">
-            <el-option label="Revolute" value="revolute" />
-            <el-option label="Prismatic" value="prismatic" />
-            <el-option label="Fixed" value="fixed" />
-            <el-option label="Continuous" value="continuous" />
+            <el-option v-for="opt in JOINT_TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
 
           <el-button
@@ -140,6 +137,7 @@ import { ref, computed } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useURDFStore } from '../../stores/useURDFStore'
+import { JOINT_TYPE_OPTIONS } from '../../types'
 import type { URDFJoint, JointType } from '../../types'
 
 const urdfStore = useURDFStore()

@@ -94,17 +94,24 @@ const workerApi = {
    * @param linkRestInverseMap linkName → 4x4 列主序逆矩阵 elements
    * @param unitScale 单位缩放（mm → m 为 0.001）
    * @param onProgress 进度回调
+   * @param extraFiles 附加文本文件（如 MuJoCo robot.xml）
    */
   async exportURDF(
     urdfXml: string,
     linkSolidMap: Record<string, SerializedSolidData[]>,
     linkRestInverseMap: Record<string, number[]>,
     unitScale: number,
-    onProgress?: (stage: string, percent: number) => void
+    onProgress?: (stage: string, percent: number) => void,
+    extraFiles?: Record<string, string>
   ): Promise<ArrayBuffer> {
     const zip = new JSZip()
 
-    zip.file('robot.urdf', urdfXml)
+    if (urdfXml) zip.file('robot.urdf', urdfXml)
+    if (extraFiles) {
+      for (const [path, content] of Object.entries(extraFiles)) {
+        zip.file(path, content)
+      }
+    }
 
     const linkNames = Object.keys(linkSolidMap)
     const total = linkNames.length

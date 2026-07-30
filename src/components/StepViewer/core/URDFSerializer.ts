@@ -45,6 +45,22 @@ export function serializeURDF(robot: URDFRobot, options?: SerializeOptions): str
     lines.push(serializeJoint(joint, robot, s, options))
   }
 
+  const loops = (robot.loops || []).filter(l => l.enabled)
+  if (loops.length > 0) {
+    lines.push('  <!--')
+    lines.push('    闭链约束（URDF 为树结构，无法原生表达，以下仅为记录；')
+    lines.push('    完整闭链请使用同目录导出的 MuJoCo robot.xml 中的 <equality> 段）')
+    for (const loop of loops) {
+      const a = robot.links.find(l => l.id === loop.linkAId)?.name || loop.linkAId
+      const b = robot.links.find(l => l.id === loop.linkBId)?.name || loop.linkBId
+      const anchor: [number, number, number] = [
+        loop.anchor[0] * s, loop.anchor[1] * s, loop.anchor[2] * s
+      ]
+      lines.push(`    ${loop.name}: ${loop.type} ${a} <-> ${b} @ (${fmtVec3(anchor)})`)
+    }
+    lines.push('  -->')
+  }
+
   lines.push('</robot>')
   return lines.join('\n')
 }
@@ -164,22 +180,75 @@ function serializeJoint(joint: URDFJoint, robot: URDFRobot, unitScale: number, o
     xyzFinal[2] * s
   ]
 
+  if (joint.type === 'ball') {
+    const d1 = `${joint.name}_ball_x`
+    const d2 = `${joint.name}_ball_y`
+    lines.push(dummyLink(d1))
+    lines.push(dummyLink(d2))
+    lines.push(subRevolute(`${joint.name}_rx`, parentName, d1, xyzScaled, rpyFinal, [1, 0, 0], joint, s))
+    lines.push(subRevolute(`${joint.name}_ry`, d1, d2, [0, 0, 0], [0, 0, 0], [0, 1, 0], joint, s))
+    lines.push(subRevolute(`${joint.name}_rz`, d2, childName, [0, 0, 0], [0, 0, 0], [0, 0, 1], joint, s))
+    return lines.join('\n')
+  }
+
   lines.push(`  <joint name="${escapeXml(joint.name)}" type="${joint.type}">`)
   lines.push(`    <parent link="${escapeXml(parentName)}"/>`)
   lines.push(`    <child link="${escapeXml(childName)}"/>`)
   lines.push(`    <origin xyz="${fmtVec3(xyzScaled)}" rpy="${fmtVec3(rpyFinal)}"/>`)
-  lines.push(`    <axis xyz="${fmtVec3(joint.axis)}"/>`)
+  if (joint.type !== 'floating') {
+    lines.push(`    <axis xyz="${fmtVec3(joint.axis)}"/>`)
+  }
 
-  if (joint.type !== 'fixed') {
-    // prismatic 关节的 limits 是线性尺寸，需要缩放；revolute/continuous 是弧度，不缩放
-    const isPrismatic = joint.type === 'prismatic'
-    const limitScale = isPrismatic ? s : 1
-    const velScale = isPrismatic ? s : 1 // prismatic: m/s，revolute: rad/s
-    lines.push(`    <limit lower="${fmtNum(joint.limits.lower * limitScale)}" upper="${fmtNum(joint.limits.upper * limitScale)}" effort="${fmtNum(joint.limits.effort)}" velocity="${fmtNum(joint.limits.velocity * velScale)}"/>`)
+  if (joint.type === 'revolute' || joint.type === 'prismatic') {
+    lines.push(writeLimit(joint, s, true))
+  } else if (joint.type === 'continuous' || joint.type === 'planar') {
+    lines.push(writeLimit(joint, s, false))
   }
 
   lines.push('  </joint>')
   return lines.join('\n')
+}
+
+function writeLimit(joint: URDFJoint, unitScale: number, withRange: boolean): string {
+  const isLinear = joint.type === 'prismatic' || joint.type === 'planar'
+  const scale = isLinear ? unitScale : 1
+  const range = withRange
+    ? `lower="${fmtNum(joint.limits.lower * scale)}" upper="${fmtNum(joint.limits.upper * scale)}" `
+    : ''
+  return `    <limit ${range}effort="${fmtNum(joint.limits.effort)}" velocity="${fmtNum(joint.limits.velocity * scale)}"/>`
+}
+
+function dummyLink(name: string): string {
+  return [
+    `  <link name="${escapeXml(name)}">`,
+    '    <inertial>',
+    '      <mass value="1e-6"/>',
+    '      <origin xyz="0 0 0" rpy="0 0 0"/>',
+    '      <inertia ixx="1e-9" ixy="0" ixz="0" iyy="1e-9" iyz="0" izz="1e-9"/>',
+    '    </inertial>',
+    '  </link>'
+  ].join('\n')
+}
+
+function subRevolute(
+  name: string,
+  parentName: string,
+  childName: string,
+  xyz: [number, number, number] | number[],
+  rpy: [number, number, number] | number[],
+  axis: [number, number, number],
+  src: URDFJoint,
+  unitScale: number
+): string {
+  return [
+    `  <joint name="${escapeXml(name)}" type="revolute">`,
+    `    <parent link="${escapeXml(parentName)}"/>`,
+    `    <child link="${escapeXml(childName)}"/>`,
+    `    <origin xyz="${fmtVec3(xyz)}" rpy="${fmtVec3(rpy)}"/>`,
+    `    <axis xyz="${fmtVec3(axis)}"/>`,
+    writeLimit({ ...src, type: 'revolute' }, unitScale, true),
+    '  </joint>'
+  ].join('\n')
 }
 
 /**
@@ -258,7 +327,7 @@ export function deserializeURDF(xml: string): URDFRobot {
     })
   })
 
-  return { name: robotName, links, joints }
+  return { name: robotName, links, joints, loops: [] }
 }
 
 // ============ 辅助函数 ============
