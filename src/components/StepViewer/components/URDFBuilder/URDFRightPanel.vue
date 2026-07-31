@@ -8,7 +8,7 @@
         <URDFJointProperties v-if="urdfStore.selectedJointId" />
         <URDFLinkProperties v-else-if="urdfStore.selectedLinkId" />
         <div v-else class="empty-hint context-empty">
-          <el-icon style="font-size: 24px; color: #dcdfe6">
+          <el-icon style="font-size: 24px; color: var(--text-3)">
             <Connection />
           </el-icon>
           <p>点击左侧树节点</p>
@@ -87,8 +87,8 @@ const contextTitle = computed(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-left: 1px solid #e4e7ed;
+  background: var(--surface-1);
+  border-left: 1px solid var(--line);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -117,7 +117,7 @@ const contextTitle = computed(() => {
 .section-divider {
   flex-shrink: 0;
   height: 1px;
-  background: #e4e7ed;
+  background: var(--line);
 }
 
 .section-header {
@@ -125,16 +125,18 @@ const contextTitle = computed(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
-  height: 36px;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f2f5;
+  height: 44px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
   user-select: none;
   flex-shrink: 0;
 
   .section-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #303133;
+    font-size: 12px;
+    font-weight: 650;
+    color: var(--text-1);
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -152,14 +154,14 @@ const contextTitle = computed(() => {
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #dcdfe6;
+    background: #bcc4be;
     border-radius: 2px;
   }
 }
 
 .empty-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-3);
   text-align: center;
   padding: 12px 0;
 }
@@ -174,7 +176,7 @@ const contextTitle = computed(() => {
   p {
     margin: 0;
     font-size: 12px;
-    color: #c0c4cc;
+    color: var(--text-3);
   }
 }
 
@@ -184,12 +186,12 @@ const contextTitle = computed(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #fafafa;
-  border-top: 1px solid #f0f2f5;
+  background: var(--surface-2);
+  border-top: 1px solid var(--line);
 
   .fk-count {
     font-size: 11px;
-    color: #909399;
+    color: var(--text-3);
   }
 }
 </style>

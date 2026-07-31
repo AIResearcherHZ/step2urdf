@@ -135,12 +135,13 @@ onUnmounted(() => {
   position: absolute;
   top: 8px;
   left: 8px;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(32, 37, 34, 0.92);
   color: #fff;
-  font-family: "Consolas", "Monaco", monospace;
+  font-family: "JetBrains Mono", "Cascadia Mono", monospace;
   font-size: 11px;
   padding: 8px 10px;
-  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   min-width: 100px;
   z-index: 100;
   pointer-events: none;

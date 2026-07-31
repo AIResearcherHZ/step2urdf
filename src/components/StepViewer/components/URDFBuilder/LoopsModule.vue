@@ -153,22 +153,22 @@ function pickAnchorFromSelection(loopId: string): void {
 .module-title {
   font-size: 12px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-1);
 }
 
 .empty-hint {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   line-height: 1.6;
   padding: 4px 2px;
 }
 
 .loop-item {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--line);
   border-radius: 4px;
   padding: 6px;
   margin-bottom: 6px;
-  background: #fafafa;
+  background: var(--surface-2);
 }
 
 .loop-row {
@@ -187,11 +187,11 @@ function pickAnchorFromSelection(loopId: string): void {
 
 .loop-arrow {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .loop-tip {
   font-size: 10px;
-  color: #c0c4cc;
+  color: var(--text-3);
 }
 </style>

@@ -20,14 +20,33 @@
       >
         导出当前项目
       </el-button>
+      <el-dropdown
+        trigger="click"
+        popper-class="pm-clear-menu"
+        :disabled="busy || !available"
+        @command="handleClearCommand"
+      >
+        <el-button :icon="Delete" :disabled="busy || !available">
+          清理缓存<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="geometry">
+              仅清理几何缓存<span class="pm-dd-hint">保留项目，下次打开重新解析</span>
+            </el-dropdown-item>
+            <el-dropdown-item command="all" divided>
+              <span class="pm-danger">清空全部项目数据</span>
+              <span class="pm-dd-hint">删除所有项目、模型与缩略图</span>
+            </el-dropdown-item>
+            <el-dropdown-item command="site" divided>
+              <span class="pm-danger">清除网站全部缓存</span>
+              <span class="pm-dd-hint">含浏览器缓存与本地数据库，完成后重载</span>
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <span class="pm-storage" v-if="storageText">{{ storageText }}</span>
-      <input
-        ref="fileInputRef"
-        type="file"
-        accept=".miles"
-        hidden
-        @change="handleFileChange"
-      />
+      <input ref="fileInputRef" type="file" accept=".miles" hidden @change="handleFileChange" />
     </div>
 
     <el-alert
@@ -77,7 +96,7 @@
           </div>
           <div class="pm-source" :title="project.sourceFileName">
             {{ project.sourceFileName }} · {{ formatBytes(project.sourceFileSize) }} ·
-            {{ formatTime(project.updatedAt) }}
+            {{ formatRelativeTime(project.updatedAt) }}
           </div>
         </div>
 
@@ -111,8 +130,9 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from "vue";
 import { ElMessageBox } from "element-plus";
-import { FolderOpened, Download, Box } from "@element-plus/icons-vue";
+import { FolderOpened, Download, Box, Delete, ArrowDown } from "@element-plus/icons-vue";
 import type { ProjectRecord } from "../persistence/types";
+import { formatBytes, formatCount, formatRelativeTime } from "../utils/format";
 
 const props = defineProps<{
   visible: boolean;
@@ -131,7 +151,16 @@ const emit = defineEmits<{
   rename: [id: string, name: string];
   import: [file: File];
   export: [];
+  clearGeometry: [];
+  clearAll: [];
+  clearSite: [];
 }>();
+
+function handleClearCommand(command: string): void {
+  if (command === "geometry") emit("clearGeometry");
+  else if (command === "all") emit("clearAll");
+  else if (command === "site") emit("clearSite");
+}
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const thumbUrls = ref<Record<string, string>>({});
@@ -190,24 +219,6 @@ async function confirmRemove(project: ProjectRecord): Promise<void> {
   } catch {}
 }
 
-const formatBytes = (bytes: number): string => {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-};
-
-const formatCount = (n: number): string =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
-
-const formatTime = (ts: number): string => {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return "刚刚";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  const d = new Date(ts);
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
 </script>
 
 <style lang="scss" scoped>
@@ -221,7 +232,18 @@ const formatTime = (ts: number): string => {
 .pm-storage {
   margin-left: auto;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
+}
+
+.pm-dd-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+
+.pm-danger {
+  color: #f56c6c;
 }
 
 .pm-alert {
@@ -234,7 +256,7 @@ const formatTime = (ts: number): string => {
 
 .pm-empty-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .pm-list {
@@ -285,7 +307,7 @@ const formatTime = (ts: number): string => {
 
 .pm-thumb-fallback {
   font-size: 24px;
-  color: #c0c4cc;
+  color: var(--text-3);
 }
 
 .pm-meta {
@@ -317,7 +339,7 @@ const formatTime = (ts: number): string => {
 
 .pm-source {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

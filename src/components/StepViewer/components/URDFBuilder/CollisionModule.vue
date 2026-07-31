@@ -242,7 +242,7 @@ function handleModeChange(linkId: string, mode: CollisionMode): void {
 
 .cm-hint {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .cm-alert {
@@ -256,7 +256,7 @@ function handleModeChange(linkId: string, mode: CollisionMode): void {
 
 .cm-empty {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   text-align: center;
   padding: 8px 0;
 }

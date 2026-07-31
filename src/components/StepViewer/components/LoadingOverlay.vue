@@ -79,8 +79,7 @@ const statusClass = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(245, 245, 245, 0.95);
-  backdrop-filter: blur(4px);
+  background: rgba(250, 250, 247, 0.94);
   z-index: 100;
 }
 
@@ -110,9 +109,9 @@ const statusClass = computed(() => {
   position: absolute;
   width: 60px;
   height: 60px;
-  border: 2px solid rgba(64, 158, 255, 0.6);
-  background: rgba(64, 158, 255, 0.1);
-  box-shadow: inset 0 0 20px rgba(64, 158, 255, 0.2);
+  border: 1px solid rgba(255, 173, 50, 0.72);
+  background: rgba(255, 173, 50, 0.07);
+  box-shadow: inset 0 0 18px rgba(255, 173, 50, 0.08);
 }
 
 .front {
@@ -169,14 +168,14 @@ const statusClass = computed(() => {
 .progress-bar-container {
   width: 100%;
   height: 6px;
-  background: #e4e7ed;
+  background: var(--surface-3);
   border-radius: 3px;
   overflow: hidden;
 }
 
 .progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #409eff, #67c23a);
+  background: var(--accent);
   border-radius: 3px;
   transition: width 0.3s ease;
   position: relative;
@@ -206,7 +205,7 @@ const statusClass = computed(() => {
 .progress-text {
   font-size: 14px;
   font-weight: 600;
-  color: #409eff;
+  color: var(--accent);
 }
 
 .status-section {
@@ -223,7 +222,7 @@ const statusClass = computed(() => {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #909399;
+    background: var(--text-3);
     animation: dotPulse 1.4s infinite ease-in-out both;
 
     &:nth-child(1) {
@@ -240,20 +239,20 @@ const statusClass = computed(() => {
   }
 
   &.status-uploading .dot {
-    background: #409eff;
+    background: var(--accent);
   }
 
   &.status-parsing .dot {
-    background: #e6a23c;
+    background: var(--accent);
   }
 
   &.status-success .dot {
-    background: #67c23a;
+    background: var(--success);
     animation: none;
   }
 
   &.status-error .dot {
-    background: #f56c6c;
+    background: var(--danger);
     animation: none;
   }
 }
@@ -274,13 +273,13 @@ const statusClass = computed(() => {
 
 .status-message {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-2);
 }
 
 .detail-section {
   .file-name {
     font-size: 12px;
-    color: #909399;
+    color: var(--text-3);
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;

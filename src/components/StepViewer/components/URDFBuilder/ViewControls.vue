@@ -40,21 +40,18 @@
         </el-select>
       </div>
       <div class="control-row zup-actions">
-        <el-tooltip
-          content="把整机几何、关节、惯量与基坐标系一并旋转，使所选轴指向 +Z；该操作会改写几何数据"
-          placement="top"
-        >
-          <el-button
-            type="warning"
-            plain
-            size="small"
-            :disabled="!stepStore.hasModel"
-            @click="emit('rotateToZUp', currentUpAxis)"
-          >
-            🧭 旋转到 Z-up
-          </el-button>
-        </el-tooltip>
         <el-button
+          v-hint="'把整机几何、关节、惯量与基坐标系一并旋转，使所选轴指向 +Z；该操作会改写几何数据'"
+          type="warning"
+          plain
+          size="small"
+          :disabled="!stepStore.hasModel"
+          @click="emit('rotateToZUp', currentUpAxis)"
+        >
+          🧭 旋转到 Z-up
+        </el-button>
+        <el-button
+          v-hint="'撤销 Z-up 旋转，恢复模型导入时的原始朝向'"
           text
           size="small"
           :disabled="!stepStore.isModelRotated"
@@ -64,21 +61,17 @@
         </el-button>
       </div>
 
-      <el-tooltip
-        content="按拓扑顺序把每个关节的坐标轴都对齐到全局 Z-up 右手系（rpy 全部归零），旋转轴改用向量表达；轴心、轴向与整机运动学保持不变"
-        placement="top"
+      <el-button
+        v-hint="'按拓扑顺序把每个关节的坐标轴都对齐到全局 Z-up 右手系（rpy 全部归零），旋转轴改用向量表达；轴心、轴向与整机运动学保持不变'"
+        text
+        type="primary"
+        size="small"
+        style="width: 100%; margin-top: 2px"
+        :disabled="urdfStore.robot.joints.length === 0"
+        @click="alignAllJointFrames"
       >
-        <el-button
-          text
-          type="primary"
-          size="small"
-          style="width: 100%; margin-top: 2px"
-          :disabled="urdfStore.robot.joints.length === 0"
-          @click="alignAllJointFrames"
-        >
-          全部关节坐标轴对齐 Z-up
-        </el-button>
-      </el-tooltip>
+        全部关节坐标轴对齐 Z-up
+      </el-button>
     </div>
   </div>
 
@@ -205,6 +198,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { ElMessage } from "element-plus";
+import { vHint } from "../composables/useHintBar";
 import { Loading } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
@@ -431,7 +425,7 @@ function applyResults(): void {
 
 .axis-value {
   font-size: 10px;
-  color: #909399;
+  color: var(--text-2);
   flex-shrink: 0;
   width: 26px;
   text-align: right;
@@ -443,7 +437,7 @@ function applyResults(): void {
 
 .zup-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
@@ -510,7 +504,7 @@ function applyResults(): void {
   .edit-hint {
     margin: 6px 0 0;
     font-size: 11px;
-    color: #909399;
+    color: var(--text-2);
   }
 }
 
@@ -545,7 +539,7 @@ function applyResults(): void {
 
 .solid-mass-vol {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   font-family: monospace;
   width: 96px;
   flex-shrink: 0;
@@ -554,13 +548,13 @@ function applyResults(): void {
 
 .solid-mass-unit {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
 .solid-mass-com {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   font-family: monospace;
   overflow: hidden;
   text-overflow: ellipsis;

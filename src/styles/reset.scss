@@ -7,6 +7,36 @@ body,
   margin: 0;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  color: #232724;
+  background: #f7f7f3;
+  font-family: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  color: #17130c;
+  background: #ffb23f;
+}
+
 :-webkit-any(article, aside, nav, section) h1 {
   font-size: 2em;
 }

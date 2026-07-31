@@ -340,8 +340,8 @@ defineExpose({ setCurrentNodeById });
   height: 100%;
   min-width: 200px;
   max-width: 500px;
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--surface-1);
+  border-right: 1px solid var(--line);
   z-index: 10;
   overflow: hidden;
 }
@@ -351,17 +351,21 @@ defineExpose({ setCurrentNodeById });
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #fafafa;
+  min-height: 45px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
   flex-shrink: 0;
 
   .panel-title {
     display: flex;
     align-items: center;
     gap: 5px;
-    font-size: 13px;
-    font-weight: 600;
-    color: #303133;
+    font-size: 12px;
+    font-weight: 650;
+    color: var(--text-1);
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
   }
 
   .panel-header-actions {
@@ -382,13 +386,14 @@ defineExpose({ setCurrentNodeById });
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #dcdfe6;
+    background: #bcc4be;
     border-radius: 2px;
   }
 
   :deep(.el-tree) {
     font-size: 12px;
-    --el-tree-node-hover-bg-color: #f0f5ff;
+    --el-tree-node-hover-bg-color: #242a2a;
+    background: transparent;
   }
 
   :deep(.el-tree-node__content) {
@@ -402,7 +407,7 @@ defineExpose({ setCurrentNodeById });
   flex: 3;
   min-height: 0;
   overflow-y: auto;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--line);
   padding: 4px 0;
 
   &::-webkit-scrollbar {
@@ -410,7 +415,7 @@ defineExpose({ setCurrentNodeById });
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #dcdfe6;
+    background: #bcc4be;
     border-radius: 2px;
   }
 }
@@ -424,15 +429,15 @@ defineExpose({ setCurrentNodeById });
   min-width: 0;
 
   &.link .node-icon {
-    color: #409eff;
+    color: #7ec8e8;
   }
 
   &.joint .node-icon {
-    color: #e6a23c;
+    color: var(--accent);
   }
 
   &.is-base .node-icon {
-    color: #67c23a;
+    color: var(--success);
   }
 }
 
@@ -443,7 +448,7 @@ defineExpose({ setCurrentNodeById });
 
 .node-label {
   font-size: 12px;
-  color: #303133;
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -466,8 +471,8 @@ defineExpose({ setCurrentNodeById });
 .solid-count {
   flex-shrink: 0;
   font-size: 10px;
-  color: #909399;
-  background: #f0f2f5;
+  color: var(--text-3);
+  background: var(--surface-3);
   padding: 0 4px;
   border-radius: 3px;
 }
@@ -488,8 +493,8 @@ defineExpose({ setCurrentNodeById });
   }
 
   &:hover {
-    background: #e6f0ff !important;
-    color: #409eff !important;
+    background: rgba(255, 173, 50, 0.12) !important;
+    color: var(--accent) !important;
   }
 }
 
@@ -502,8 +507,8 @@ defineExpose({ setCurrentNodeById });
   display: flex;
   gap: 6px;
   padding: 8px 12px;
-  border-top: 1px solid #e4e7ed;
-  background: #fafafa;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
   flex-shrink: 0;
 
   .el-button {
@@ -521,7 +526,7 @@ defineExpose({ setCurrentNodeById });
   z-index: 20;
 
   &:hover {
-    background: rgba(64, 158, 255, 0.3);
+    background: var(--accent);
   }
 }
 </style>

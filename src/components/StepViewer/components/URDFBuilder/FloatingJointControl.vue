@@ -85,10 +85,10 @@ function startDrag(e: MouseEvent): void {
   max-height: 420px;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  background: var(--panel-face);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.38);
   overflow: hidden;
 }
 
@@ -97,8 +97,8 @@ function startDrag(e: MouseEvent): void {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: #f5f7fa;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--panel-bar);
+  border-bottom: 1px solid var(--line-strong);
   cursor: move;
   user-select: none;
   flex-shrink: 0;
@@ -107,7 +107,7 @@ function startDrag(e: MouseEvent): void {
 .fk-title {
   font-size: 12px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-1);
 }
 
 .fk-title-actions {
@@ -130,7 +130,7 @@ function startDrag(e: MouseEvent): void {
   }
 
   &::-webkit-scrollbar-thumb {
-    background: #dcdfe6;
+    background: var(--line-strong);
     border-radius: 2px;
   }
 }
@@ -143,7 +143,7 @@ function startDrag(e: MouseEvent): void {
 
 .empty-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   text-align: center;
   padding: 12px 0;
 }

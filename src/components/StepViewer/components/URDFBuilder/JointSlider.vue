@@ -87,13 +87,13 @@ function handleChange(val: number | number[]): void {
 
 .ball-axis {
   width: 16px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .slider-hint {
   flex: 1;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .joint-slider {
@@ -107,7 +107,7 @@ function handleChange(val: number | number[]): void {
 .slider-name {
   flex-shrink: 0;
   font-size: 14px;
-  color: #303133;
+  color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -117,8 +117,9 @@ function handleChange(val: number | number[]): void {
   flex-shrink: 0;
   text-align: right;
   font-size: 14px;
-  color: #606266;
+  color: var(--text-1);
   font-family: monospace;
+  font-weight: 600;
   letter-spacing: -0.3px;
 }
 </style>

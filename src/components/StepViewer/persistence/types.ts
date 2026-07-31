@@ -2,7 +2,6 @@ import type { URDFRobot, ExportFormat, CollisionConfig, CollisionMode } from "..
 
 export const MILES_FORMAT_VERSION = 1;
 export const MILES_EXTENSION = ".miles";
-export const MILES_MIME = "application/x-step2urdf-project";
 
 export interface ProjectStats {
   solidCount: number;

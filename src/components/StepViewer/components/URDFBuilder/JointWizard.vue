@@ -5,7 +5,7 @@
         <span class="panel-title">⚙️ 创建关节</span>
         <div class="panel-actions">
           <el-tag v-if="pickedEdgeInfo" type="success" size="small">{{ pickedEdgeInfo }}</el-tag>
-          <el-button size="small" text @click="handleClose" style="color: #ccc">✕</el-button>
+          <el-button size="small" text @click="handleClose">✕</el-button>
         </div>
       </div>
 
@@ -69,11 +69,14 @@
         <div class="pick-hint">
           <el-tag size="small" type="warning">🎯 或直接点击 3D 圆弧边 / 圆柱面拾取轴线</el-tag>
           <div class="pick-tools">
-            <el-tooltip content="半透明显示模型，方便看到内部孔与轴" placement="top">
-              <el-button size="small" :type="xray ? 'primary' : 'default'" @click="toggleXray">
-                {{ xray ? "透视中" : "透视" }}
-              </el-button>
-            </el-tooltip>
+            <el-button
+              v-hint="'半透明显示模型，方便看到内部孔与轴'"
+              size="small"
+              :type="xray ? 'primary' : 'default'"
+              @click="toggleXray"
+            >
+              {{ xray ? "透视中" : "透视" }}
+            </el-button>
             <span class="pick-cycle">
               光标下 {{ candidateInfo.total || 0 }} 个特征
               <el-button
@@ -306,6 +309,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onBeforeUnmount, type CSSProperties } from "vue";
+import { vHint } from "../composables/useHintBar";
 import * as THREE from "three";
 import { ElMessage } from "element-plus";
 import { useURDFStore } from "../../stores/useURDFStore";
@@ -726,9 +730,10 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 1500;
   width: 390px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  background: var(--panel-face);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.42);
   display: flex;
   flex-direction: column;
   max-height: 80vh;
@@ -740,15 +745,16 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #2d2d2d;
+  background: var(--panel-bar);
+  border-bottom: 1px solid var(--line-strong);
   cursor: move;
   user-select: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .panel-title {
   font-size: 13px;
-  color: #e0e0e0;
+  color: var(--text-1);
   font-weight: 600;
 }
 
@@ -771,10 +777,10 @@ onBeforeUnmount(() => {
 
 .candidate-block {
   margin: 6px 0 8px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 8px;
-  background: #fafcff;
+  background: var(--surface-1);
 }
 
 .candidate-head {
@@ -787,13 +793,13 @@ onBeforeUnmount(() => {
 .candidate-title {
   font-size: 12px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-1);
   flex: 1;
 }
 
 .candidate-empty {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   padding: 4px 0;
 }
 
@@ -815,7 +821,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
 
   &:hover {
-    background: #ecf5ff;
+    background: rgba(255, 173, 50, 0.1);
   }
 
   &.active {
@@ -843,7 +849,7 @@ onBeforeUnmount(() => {
 }
 
 .candidate-detail {
-  color: #909399;
+  color: var(--text-2);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -859,7 +865,7 @@ onBeforeUnmount(() => {
 
 .pick-cycle {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .pick-current {
@@ -884,7 +890,7 @@ onBeforeUnmount(() => {
 
 .flip-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
 }
 
 .field-row {
@@ -914,7 +920,7 @@ onBeforeUnmount(() => {
 
 .limits-header {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   margin: 4px 0 5px;
   padding-top: 5px;
   border-top: 1px solid #ebeef5;

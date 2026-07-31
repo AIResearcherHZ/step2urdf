@@ -33,19 +33,15 @@
 
       <div class="origin-actions">
         <div class="origin-btn-row">
-          <el-tooltip
-            content="按 Z-up 约定取已绑定 Solid 包围盒的底面中心（最小 Z）"
-            placement="top"
+          <el-button
+            v-hint="'按 Z-up 约定取已绑定 Solid 包围盒的底面中心（最小 Z）'"
+            type="primary"
+            plain
+            :disabled="link.solidIds.length === 0"
+            @click="autoCalcOrigin"
           >
-            <el-button
-              type="primary"
-              plain
-              :disabled="link.solidIds.length === 0"
-              @click="autoCalcOrigin"
-            >
-              自动计算
-            </el-button>
-          </el-tooltip>
+            自动计算
+          </el-button>
           <el-button v-if="urdfStore.baseLinkOrigin" text type="danger" @click="clearBaseOrigin">
             清除
           </el-button>
@@ -152,6 +148,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
+import { vHint } from "../composables/useHintBar";
 import { ElMessage } from "element-plus";
 import { Files, Delete, Paperclip } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
@@ -336,7 +333,7 @@ function autoCalcOrigin(): void {
 
   .prop-unit {
     font-size: 10px;
-    color: #909399;
+    color: var(--text-2);
   }
 }
 
@@ -350,7 +347,7 @@ function autoCalcOrigin(): void {
   border: 1px solid #ebeef5;
 
   .el-icon {
-    color: #909399;
+    color: var(--text-2);
     font-size: 12px;
     flex-shrink: 0;
   }
@@ -390,7 +387,7 @@ function autoCalcOrigin(): void {
 .inertia-grid {
   .inertia-title {
     font-size: 10px;
-    color: #909399;
+    color: var(--text-2);
     display: block;
     margin-bottom: 4px;
   }
@@ -414,7 +411,7 @@ function autoCalcOrigin(): void {
 
 .empty-hint {
   font-size: 11px;
-  color: #c0c4cc;
+  color: var(--text-3);
   text-align: center;
   padding: 8px 0;
 }

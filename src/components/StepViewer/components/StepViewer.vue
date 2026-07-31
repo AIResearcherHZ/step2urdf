@@ -71,16 +71,14 @@
         />
 
         <div class="binding-overlay" v-if="urdfStore.bindingMode.active">
-          <el-tag type="warning" effect="dark">
+          <el-tag type="warning" effect="light">
             点击 3D 场景中的 Solid 绑定到 Link
-            <el-button size="small" text style="color: #fff" @click="urdfStore.stopBindingMode()"
-              >完成</el-button
-            >
+            <el-button size="small" text @click="urdfStore.stopBindingMode()">完成</el-button>
           </el-tag>
         </div>
 
         <div class="binding-overlay" v-if="urdfStore.exporting">
-          <el-tag type="info" effect="dark">
+          <el-tag type="info" effect="light">
             {{ urdfStore.exportProgress || "正在导出..." }}
           </el-tag>
         </div>
@@ -105,6 +103,9 @@
       @rename="handleRenameProject"
       @import="handleImportProject"
       @export="handleExportProject"
+      @clear-geometry="handleClearGeometryCache"
+      @clear-all="handleClearAllData"
+      @clear-site="handleClearSiteCache"
     />
 
     <JointWizard
@@ -120,7 +121,10 @@
     />
 
     <div class="status-bar">
-      <template v-if="store.hasModel">
+      <template v-if="hint">
+        <span class="status-hint">{{ hint }}</span>
+      </template>
+      <template v-else-if="store.hasModel">
         <span class="status-item"
           >实体: <b>{{ store.solids.length }}</b></span
         >
@@ -180,12 +184,9 @@ import {
   type UpAxis,
 } from "../core/ZUpTransform";
 import { useURDFScene } from "./composables/useURDFScene";
-import type {
-  TreeNode,
-  SerializedSolidData,
-  SerializedTreeNode,
-  CameraConfig,
-} from "../types";
+import { useHintBar } from "./composables/useHintBar";
+import { formatBytes } from "../utils/format";
+import type { TreeNode, SerializedSolidData, SerializedTreeNode, CameraConfig } from "../types";
 import { FeatureType, ViewPreset } from "../types";
 
 const props = withDefaults(
@@ -198,13 +199,14 @@ const props = withDefaults(
   {
     width: "100%",
     height: "100%",
-    backgroundColor: 0xf5f5f5,
+    backgroundColor: 0xf4f4f0,
     showStatsPanel: false,
   },
 );
 
 const store = useStepViewerStore();
 const urdfStore = useURDFStore();
+const { hint } = useHintBar();
 
 const viewerRef = ref<HTMLElement>();
 const canvasContainerRef = ref<HTMLElement>();
@@ -296,9 +298,8 @@ const persistence = useProjectPersistence({
     if (!stepLoader) throw new Error("解析器尚未就绪");
     store.setFileName(fileName);
     const copy = bytes.slice();
-    const result = await stepLoader.parseBuffer(
-      copy.buffer as ArrayBuffer,
-      (progress) => store.updateUploadProgress(progress),
+    const result = await stepLoader.parseBuffer(copy.buffer as ArrayBuffer, (progress) =>
+      store.updateUploadProgress(progress),
     );
     return { solids: result.solids, tree: result.tree };
   },
@@ -402,6 +403,99 @@ async function handleExportProject(): Promise<void> {
   } catch (error) {
     ElMessage.error(`导出失败: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+async function handleClearGeometryCache(): Promise<void> {
+  const { bytes, count } = await persistence.measureGeometryCache();
+  if (count === 0) {
+    ElMessage.info("没有可清理的几何缓存");
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `将清理 ${count} 个项目的几何缓存，释放约 ${formatBytes(bytes)}。项目配置和 STEP 原文会保留，下次打开这些项目需要重新解析模型。`,
+      "清理几何缓存",
+      { type: "warning", confirmButtonText: "清理", cancelButtonText: "取消" },
+    );
+  } catch {
+    return;
+  }
+
+  const removed = await persistence.clearGeometryCache();
+  await persistence.refreshList();
+  await refreshStorageText();
+  ElMessage.success(`已清理 ${removed} 个几何缓存，释放 ${formatBytes(bytes)}`);
+}
+
+async function handleClearAllData(): Promise<void> {
+  const estimate = await estimateStorage();
+
+  try {
+    await ElMessageBox.confirm(
+      `将永久删除全部 ${persistence.projects.value.length} 个项目及其模型数据、缩略图${estimate ? `（当前占用 ${formatBytes(estimate.usage)}）` : ""}。此操作不可撤销，未导出为 .miles 文件的项目将无法恢复。`,
+      "清空全部项目数据",
+      {
+        type: "error",
+        confirmButtonText: "全部删除",
+        cancelButtonText: "取消",
+        confirmButtonClass: "el-button--danger",
+      },
+    );
+  } catch {
+    return;
+  }
+
+  await persistence.clearAllData();
+  await refreshStorageText();
+  ElMessage.success("已清空全部项目数据");
+}
+
+async function handleClearSiteCache(): Promise<void> {
+  const usage = await persistence.measureSiteCache();
+
+  const parts = [
+    `${persistence.projects.value.length} 个项目`,
+    `${usage.databases} 个本地数据库`,
+    `${usage.caches} 项浏览器缓存`,
+  ];
+  if (usage.serviceWorkers > 0) parts.push(`${usage.serviceWorkers} 个 Service Worker`);
+  const keys = usage.localStorageKeys + usage.sessionStorageKeys;
+  if (keys > 0) parts.push(`${keys} 条本地设置`);
+
+  try {
+    await ElMessageBox.confirm(
+      `将清除本站的全部本地数据：${parts.join("、")}${usage.totalBytes > 0 ? `，共约 ${formatBytes(usage.totalBytes)}` : ""}。` +
+        "此操作不可撤销，未导出为 .miles 文件的项目将无法恢复。清除后页面会自动重新加载。",
+      "清除网站全部缓存",
+      {
+        type: "error",
+        confirmButtonText: "清除并重载",
+        cancelButtonText: "取消",
+        confirmButtonClass: "el-button--danger",
+      },
+    );
+  } catch {
+    return;
+  }
+
+  projectManagerVisible.value = false;
+
+  try {
+    const report = await persistence.resetSite();
+    if (report.failures.length > 0) {
+      ElMessage.warning(`部分数据未能清除: ${report.failures.slice(0, 3).join("、")}`);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    } else {
+      ElMessage.success("缓存已清除，正在重新加载...");
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
+  } catch (error) {
+    ElMessage.error(`清除失败: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  window.location.reload();
 }
 
 async function promptDraftRecovery(): Promise<void> {
@@ -1205,7 +1299,7 @@ defineExpose({
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #fff;
+  background: var(--surface-0);
   overflow: hidden;
 }
 
@@ -1213,13 +1307,15 @@ defineExpose({
   flex: 1;
   display: flex;
   overflow: hidden;
+  gap: 1px;
+  background: var(--line);
 }
 
 .canvas-container {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #f5f5f5;
+  background: radial-gradient(circle at 50% 45%, #ffffff 0, #f5f5f0 62%, #eceee8 100%);
 
   :deep(canvas) {
     display: block;
@@ -1246,6 +1342,13 @@ defineExpose({
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
+  animation: overlay-in 220ms var(--ease-out);
+
+  :deep(.el-tag) {
+    border-color: var(--line-strong);
+    box-shadow: 0 6px 20px -6px rgba(26, 33, 29, 0.22);
+    backdrop-filter: blur(6px);
+  }
 }
 
 .empty-content {
@@ -1256,7 +1359,7 @@ defineExpose({
 }
 
 .empty-text {
-  color: #909399;
+  color: var(--text-2);
   font-size: 14px;
   margin: 0;
 }
@@ -1264,35 +1367,58 @@ defineExpose({
 .status-bar {
   display: flex;
   align-items: center;
-  padding: 3px 12px;
-  font-size: 12px;
-  color: #606266;
-  background: #f5f5f5;
-  border-top: 1px solid #e4e7ed;
+  min-height: 27px;
+  padding: 4px 14px;
+  font-size: 11px;
+  letter-spacing: 0.015em;
+  color: var(--text-3);
+  background: #f8f8f5;
+  border-top: 1px solid var(--line);
   white-space: nowrap;
   overflow: hidden;
   gap: 0;
+
+  .status-hint {
+    color: var(--text-2);
+    animation: hint-in 140ms var(--ease-out);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   .status-item {
     flex-shrink: 0;
 
     b {
       font-weight: 600;
-      color: #303133;
+      color: var(--text-2);
     }
   }
 
   .status-sep {
     margin: 0 6px;
-    color: #c0c4cc;
+    color: #c6ccc6;
     flex-shrink: 0;
   }
 
   .status-selected {
-    color: #409eff;
+    color: var(--accent);
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -8px);
+  }
+}
+
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
   }
 }
 </style>

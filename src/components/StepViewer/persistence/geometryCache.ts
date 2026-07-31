@@ -81,9 +81,7 @@ export function encodeGeometryCache(
     prefix,
     headerBytes,
     new Uint8Array(headerPadding),
-    ...chunks.map(
-      (c) => c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) as ArrayBuffer,
-    ),
+    ...chunks.map((c) => c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) as ArrayBuffer),
   ]);
 }
 

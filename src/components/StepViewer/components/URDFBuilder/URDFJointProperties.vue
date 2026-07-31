@@ -125,20 +125,16 @@
             </el-button-group>
           </div>
 
-          <el-tooltip
-            content="坐标轴统一对齐全局 Z-up 右手系（rpy 归零），旋转轴改用向量单独表达；轴心位置、轴在空间中的指向与转动方向均不变，下游关节自动补偿"
-            placement="top"
+          <el-button
+            v-hint="'坐标轴统一对齐全局 Z-up 右手系（rpy 归零），旋转轴改用向量单独表达；轴心位置、轴在空间中的指向与转动方向均不变，下游关节自动补偿'"
+            size="small"
+            text
+            type="primary"
+            style="margin-top: 4px"
+            @click="alignFrameToWorldZUp"
           >
-            <el-button
-              size="small"
-              text
-              type="primary"
-              @click="alignFrameToWorldZUp"
-              style="margin-top: 4px"
-            >
-              🧭 坐标轴对齐全局 Z-up
-            </el-button>
-          </el-tooltip>
+            🧭 坐标轴对齐全局 Z-up
+          </el-button>
         </div>
       </el-collapse-item>
 
@@ -287,6 +283,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { vHint } from "../composables/useHintBar";
 import { ArrowRight } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import { useURDFStore } from "../../stores/useURDFStore";
@@ -417,7 +414,7 @@ function alignFrameToWorldZUp(): void {
   }
 
   .el-icon {
-    color: #c0c4cc;
+    color: var(--text-3);
     font-size: 10px;
   }
 }
@@ -469,7 +466,7 @@ function alignFrameToWorldZUp(): void {
 
   .prop-unit {
     font-size: 11px;
-    color: #909399;
+    color: var(--text-2);
     flex-shrink: 0;
     min-width: 36px;
   }
@@ -495,7 +492,7 @@ function alignFrameToWorldZUp(): void {
 
 .flip-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
@@ -506,7 +503,7 @@ function alignFrameToWorldZUp(): void {
 
   .coord-label {
     font-size: 11px;
-    color: #909399;
+    color: var(--text-2);
     width: 24px;
     flex-shrink: 0;
   }
@@ -514,14 +511,14 @@ function alignFrameToWorldZUp(): void {
 
 .offset-hint {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-2);
   margin: 0 0 6px;
   line-height: 1.4;
 }
 
 .empty-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-2);
   padding: 16px 0;
   text-align: center;
 }

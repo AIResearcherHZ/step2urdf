@@ -83,9 +83,7 @@ function isPhysicallyValidInertia(
   if (izz + ixx < iyy - slack) return false;
 
   const det =
-    ixx * (iyy * izz - iyz * iyz) -
-    ixy * (ixy * izz - iyz * ixz) +
-    ixz * (ixy * iyz - iyy * ixz);
+    ixx * (iyy * izz - iyz * iyz) - ixy * (ixy * izz - iyz * ixz) + ixz * (ixy * iyz - iyy * ixz);
   if (!(det > 0)) return false;
   if (ixx * iyy - ixy * ixy <= 0) return false;
 

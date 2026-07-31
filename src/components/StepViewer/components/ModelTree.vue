@@ -384,7 +384,7 @@ watch(
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #909399;
+    color: var(--text-2);
     opacity: 0.5;
     margin-left: 4px;
     padding: 2px;
@@ -402,7 +402,7 @@ watch(
 
     &.is-hidden {
       opacity: 0.6;
-      color: #c0c4cc;
+      color: var(--text-3);
     }
   }
 

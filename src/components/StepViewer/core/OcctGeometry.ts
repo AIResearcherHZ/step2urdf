@@ -80,12 +80,7 @@ function fitCircle(A: P3, B: P3, C: P3): CircleFit | null {
   return { center, axis, radius };
 }
 
-function samplePoints(
-  kernel: OcctKernel,
-  face: ShapeHandle,
-  us: number[],
-  v: number,
-): P3[] {
+function samplePoints(kernel: OcctKernel, face: ShapeHandle, us: number[], v: number): P3[] {
   return us.map((u) => kernel.pointOnSurface(face, u, v));
 }
 
@@ -112,7 +107,12 @@ function fitFromParamRange(
   return null;
 }
 
-function planeGeometry(kernel: OcctKernel, face: ShapeHandle, uMid: number, vMid: number): FaceGeometryData {
+function planeGeometry(
+  kernel: OcctKernel,
+  face: ShapeHandle,
+  uMid: number,
+  vMid: number,
+): FaceGeometryData {
   const center = kernel.getSurfaceCenterOfMass(face);
   const normal = kernel.surfaceNormal(face, uMid, vMid);
   const n = unit(normal);

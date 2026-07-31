@@ -105,10 +105,7 @@ export async function writeProjectBytes(
   return (await handle.getFile()).size;
 }
 
-export async function readProjectFile(
-  projectId: string,
-  fileName: string,
-): Promise<File | null> {
+export async function readProjectFile(projectId: string, fileName: string): Promise<File | null> {
   const dir = await getProjectDir(projectId, false);
   if (!dir) return null;
   try {
@@ -128,10 +125,7 @@ export async function readProjectBytes(
   return new Uint8Array(await file.arrayBuffer());
 }
 
-export async function readProjectText(
-  projectId: string,
-  fileName: string,
-): Promise<string | null> {
+export async function readProjectText(projectId: string, fileName: string): Promise<string | null> {
   const file = await readProjectFile(projectId, fileName);
   if (!file) return null;
   return file.text();
@@ -152,27 +146,28 @@ export async function deleteProjectDir(projectId: string): Promise<void> {
   } catch {}
 }
 
-export async function projectDirSize(projectId: string): Promise<number> {
-  const dir = await getProjectDir(projectId, false);
-  if (!dir) return 0;
-  let total = 0;
-  for await (const [, handle] of dir as unknown as AsyncIterable<
-    [string, FileSystemHandle]
-  >) {
-    if (handle.kind !== "file") continue;
+export async function projectFileSize(projectId: string, fileName: string): Promise<number> {
+  const file = await readProjectFile(projectId, fileName);
+  return file?.size ?? 0;
+}
+
+export async function clearAllProjectDirs(): Promise<void> {
+  const root = await getRoot();
+  const ids: string[] = [];
+  for await (const [name, handle] of root as unknown as AsyncIterable<[string, FileSystemHandle]>) {
+    if (handle.kind === "directory") ids.push(name);
+  }
+  for (const id of ids) {
     try {
-      total += (await (handle as FileSystemFileHandle).getFile()).size;
+      await root.removeEntry(id, { recursive: true });
     } catch {}
   }
-  return total;
 }
 
 export async function listProjectIds(): Promise<string[]> {
   const root = await getRoot();
   const ids: string[] = [];
-  for await (const [name, handle] of root as unknown as AsyncIterable<
-    [string, FileSystemHandle]
-  >) {
+  for await (const [name, handle] of root as unknown as AsyncIterable<[string, FileSystemHandle]>) {
     if (handle.kind === "directory") ids.push(name);
   }
   return ids;

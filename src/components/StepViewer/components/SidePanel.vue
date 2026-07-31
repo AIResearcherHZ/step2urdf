@@ -112,10 +112,10 @@ function startResize(e: MouseEvent): void {
   flex-direction: column;
   height: 70vh;
   max-height: 80vh;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  background: var(--panel-face);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.38);
   z-index: 1000;
   overflow: hidden;
 }
@@ -125,8 +125,8 @@ function startResize(e: MouseEvent): void {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #fafafa;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--panel-bar);
   flex-shrink: 0;
   cursor: move;
   user-select: none;
@@ -134,7 +134,8 @@ function startResize(e: MouseEvent): void {
   .panel-title {
     font-size: 13px;
     font-weight: 600;
-    color: #303133;
+    color: var(--text-1);
+    letter-spacing: 0.04em;
   }
 }
 
@@ -148,7 +149,7 @@ function startResize(e: MouseEvent): void {
   z-index: 10;
 
   &:hover {
-    background: rgba(64, 158, 255, 0.4);
+    background: var(--accent);
   }
 }
 

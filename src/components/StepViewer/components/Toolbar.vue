@@ -2,20 +2,16 @@
   <div class="step-viewer-toolbar">
     <div class="toolbar-left">
       <div class="toolbar-section">
-        <el-tooltip
-          :content="occtReady ? '选择并导入 STEP / STP 模型文件' : '正在加载 OpenCASCADE 引擎...'"
-          placement="bottom"
+        <el-button
+          v-hint="occtReady ? '选择并导入 STEP / STP 模型文件' : '正在加载 OpenCASCADE 引擎...'"
+          type="primary"
+          :loading="isLoading || !occtReady"
+          :icon="UploadFilled"
+          :disabled="isLoading || !occtReady"
+          @click="openUploadDialog"
         >
-          <el-button
-            type="primary"
-            :loading="isLoading || !occtReady"
-            :icon="UploadFilled"
-            :disabled="isLoading || !occtReady"
-            @click="openUploadDialog"
-          >
-            {{ isLoading ? "加载中..." : !occtReady ? "引擎加载中..." : "导入模型" }}
-          </el-button>
-        </el-tooltip>
+          {{ isLoading ? "加载中..." : !occtReady ? "引擎加载中..." : "导入模型" }}
+        </el-button>
         <div v-if="!occtReady" class="wasm-progress">
           <el-progress
             :percentage="Math.round(occtLoadProgress ?? 0)"
@@ -26,18 +22,23 @@
             >OpenCASCADE WASM 加载中 ({{ Math.round(occtLoadProgress ?? 0) }}%)</span
           >
         </div>
-        <el-tooltip content="打开已保存的项目 / 导入 .miles 文件" placement="bottom">
-          <el-button :icon="FolderOpened" @click="$emit('openProjects')"> 项目 </el-button>
-        </el-tooltip>
-        <el-tooltip
-          :content="autosaveHint || '保存当前项目'"
-          placement="bottom"
-          v-if="hasModel"
+        <el-button
+          v-hint="'打开已保存的项目，或导入 .miles 项目文件'"
+          :icon="FolderOpened"
+          @click="$emit('openProjects')"
         >
-          <el-button :icon="Select" :loading="projectSaving" @click="$emit('saveProject')" text>
-            {{ projectSaving ? "保存中" : "保存项目" }}
-          </el-button>
-        </el-tooltip>
+          项目
+        </el-button>
+        <el-button
+          v-if="hasModel"
+          v-hint="autosaveHint || '把当前会话保存为项目'"
+          :icon="Select"
+          :loading="projectSaving"
+          text
+          @click="$emit('saveProject')"
+        >
+          {{ projectSaving ? "保存中" : "保存项目" }}
+        </el-button>
         <span v-if="fileName" class="file-name" :title="fileName">{{ fileName }}</span>
       </div>
 
@@ -88,7 +89,7 @@
               <div class="sfc-meta">
                 <div class="sfc-name" :title="pendingFile.name">{{ pendingFile.name }}</div>
                 <div class="sfc-detail">
-                  <span class="sfc-size">{{ formatFileSize(pendingFile.size) }}</span>
+                  <span class="sfc-size">{{ formatBytes(pendingFile.size) }}</span>
                   <el-divider direction="vertical" />
                   <el-icon class="sfc-check">
                     <CircleCheckFilled />
@@ -96,7 +97,7 @@
                   <span class="sfc-ready">准备就绪</span>
                 </div>
               </div>
-              <el-tooltip content="移除文件" placement="top">
+              <el-tooltip content="移除文件" placement="top" :show-after="600">
                 <el-button
                   class="sfc-remove"
                   :icon="Close"
@@ -124,17 +125,23 @@
       </el-dialog>
     </div>
     <div class="toolbar-center" v-if="hasModel">
-      <el-tooltip content="坐标轴" placement="bottom">
-        <el-button :type="showAxes ? 'primary' : 'default'" @click="$emit('toggleAxes')" text>
-          轴
-        </el-button>
-      </el-tooltip>
-      <el-tooltip content="网格" placement="bottom">
-        <el-button :type="showGrid ? 'primary' : 'default'" @click="$emit('toggleGrid')" text>
-          网格
-        </el-button>
-      </el-tooltip>
-      <div class="opacity-control">
+      <el-button
+        v-hint="'显示 / 隐藏世界坐标轴'"
+        :type="showAxes ? 'primary' : 'default'"
+        text
+        @click="$emit('toggleAxes')"
+      >
+        轴
+      </el-button>
+      <el-button
+        v-hint="'显示 / 隐藏地面网格'"
+        :type="showGrid ? 'primary' : 'default'"
+        text
+        @click="$emit('toggleGrid')"
+      >
+        网格
+      </el-button>
+      <div class="opacity-control" v-hint="'调整模型整体不透明度，便于观察内部结构'">
         <span class="opacity-label">透明度</span>
         <el-slider
           v-model="localOpacity"
@@ -150,57 +157,66 @@
 
       <el-divider direction="vertical" />
 
-      <el-tooltip content="画线测量（点击模型/空间画直线，自动计算距离）" placement="bottom">
-        <el-button
-          :type="isLineMeasureActive ? 'warning' : 'default'"
-          @click="$emit('toggleLineMeasure')"
-          text
-        >
-          画线测量
-        </el-button>
-      </el-tooltip>
+      <el-button
+        v-hint="'在模型或空间中点击两点画直线，自动计算距离'"
+        :type="isLineMeasureActive ? 'warning' : 'default'"
+        text
+        @click="$emit('toggleLineMeasure')"
+      >
+        画线测量
+      </el-button>
 
       <el-divider direction="vertical" />
 
-      <el-tooltip content="打开/关闭模型结构树面板" placement="bottom">
-        <el-button
-          :type="isModelTreeOpen ? 'primary' : 'default'"
-          @click="$emit('toggleModelTree')"
-          text
-        >
-          模型树
-        </el-button>
-      </el-tooltip>
+      <el-button
+        v-hint="'打开 / 关闭模型结构树面板'"
+        :type="isModelTreeOpen ? 'primary' : 'default'"
+        text
+        @click="$emit('toggleModelTree')"
+      >
+        模型树
+      </el-button>
     </div>
 
     <div class="toolbar-right" v-if="hasModel">
-      <el-tooltip content="取消选择" placement="bottom">
-        <el-button @click="$emit('clearSelection')" :disabled="!hasSelection" text>
-          取消选择
-        </el-button>
+      <el-button
+        v-hint="'清除当前的实体与特征选择'"
+        :disabled="!hasSelection"
+        text
+        @click="$emit('clearSelection')"
+      >
+        取消选择
+      </el-button>
+      <el-tooltip content="适应窗口" placement="bottom" :show-after="600">
+        <el-button v-hint="'缩放相机使整个模型充满视口'" :icon="Aim" @click="$emit('fitView')" />
       </el-tooltip>
-      <el-tooltip content="适应窗口" placement="bottom">
-        <el-button :icon="Aim" @click="$emit('fitView')" />
-      </el-tooltip>
-      <el-tooltip content="重置视图" placement="bottom">
-        <el-button :icon="RefreshRight" @click="$emit('resetView')" />
-      </el-tooltip>
-      <el-divider direction="vertical" />
-      <el-tooltip content="性能监控" placement="bottom">
+      <el-tooltip content="重置视图" placement="bottom" :show-after="600">
         <el-button
-          :type="showStats ? 'warning' : 'default'"
-          @click="$emit('toggleStats')"
-          :icon="DataLine"
-          text
-        >
-          FPS
-        </el-button>
+          v-hint="'恢复默认相机角度与缩放'"
+          :icon="RefreshRight"
+          @click="$emit('resetView')"
+        />
       </el-tooltip>
+      <el-divider direction="vertical" />
+      <el-button
+        v-hint="'显示 / 隐藏帧率与渲染统计面板'"
+        :type="showStats ? 'warning' : 'default'"
+        :icon="DataLine"
+        text
+        @click="$emit('toggleStats')"
+      >
+        FPS
+      </el-button>
 
       <el-divider direction="vertical" />
 
-      <el-tooltip content="GitHub 仓库" placement="bottom">
-        <el-button class="github-btn" text @click="openGitHub">
+      <el-tooltip content="GitHub 仓库" placement="bottom" :show-after="600">
+        <el-button
+          v-hint="'在新标签页打开 step2urdf 的 GitHub 仓库'"
+          class="github-btn"
+          text
+          @click="openGitHub"
+        >
           <svg
             class="github-icon"
             viewBox="0 0 1024 1024"
@@ -225,6 +241,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
+import { vHint } from "./composables/useHintBar";
+import { formatBytes } from "../utils/format";
 import type { UploadFile, UploadInstance } from "element-plus";
 import {
   UploadFilled,
@@ -286,12 +304,6 @@ function isValidStepFile(file: File): boolean {
   return name.endsWith(".step") || name.endsWith(".stp");
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function openUploadDialog(): void {
   pendingFile.value = null;
   uploadDialogVisible.value = true;
@@ -334,11 +346,7 @@ function handleOpacityInput(val: number | number[]): void {
 }
 
 function openGitHub(): void {
-  window.open(
-    "https://github.com/Democratizing-Dexterous/URDFlyS2U",
-    "_blank",
-    "noopener,noreferrer",
-  );
+  window.open("https://github.com/AIResearcherHZ/step2urdf", "_blank", "noopener,noreferrer");
 }
 </script>
 
@@ -347,11 +355,13 @@ function openGitHub(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 12px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  gap: 8px;
-  min-height: 42px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid var(--line);
+  gap: 12px;
+  min-height: 52px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 30;
 
   .toolbar-left,
   .toolbar-center,
@@ -369,6 +379,12 @@ function openGitHub(): void {
     flex: 1;
     justify-content: center;
     flex-wrap: wrap;
+    width: max-content;
+    max-width: 720px;
+    padding: 3px 6px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
   }
 
   .toolbar-right {
@@ -383,7 +399,7 @@ function openGitHub(): void {
     .file-name {
       margin-left: 6px;
       font-size: 12px;
-      color: #606266;
+      color: var(--text-2);
       max-width: 160px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -407,7 +423,7 @@ function openGitHub(): void {
 
     .opacity-label {
       font-size: 12px;
-      color: #606266;
+      color: var(--text-3);
       white-space: nowrap;
     }
 
@@ -447,7 +463,7 @@ function openGitHub(): void {
 
   .wasm-progress-text {
     font-size: 11px;
-    color: #909399;
+    color: var(--text-3);
     white-space: nowrap;
   }
 }
@@ -457,12 +473,29 @@ function openGitHub(): void {
   font-size: 0;
 
   .github-icon {
-    color: #606266;
+    color: var(--text-2);
     transition: color 0.2s;
   }
 
   &:hover .github-icon {
-    color: #303133;
+    color: var(--text-1);
+  }
+}
+
+@media (max-width: 1180px) {
+  .step-viewer-toolbar {
+    overflow-x: auto;
+    justify-content: flex-start;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    .toolbar-center {
+      order: 3;
+      flex: 0 0 auto;
+    }
   }
 }
 
@@ -610,7 +643,7 @@ function openGitHub(): void {
   .sfc-remove {
     flex-shrink: 0;
     border-color: #dcdfe6;
-    color: #909399;
+    color: var(--text-2);
 
     &:hover {
       border-color: #f56c6c;
@@ -709,3 +742,4 @@ function openGitHub(): void {
   overflow: hidden;
 }
 </style>
+border-color: var(--line-strong);

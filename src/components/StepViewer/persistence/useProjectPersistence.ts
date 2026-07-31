@@ -1,8 +1,10 @@
-import { ref, shallowRef, watch, onBeforeUnmount, type Ref } from "vue";
+import { ref, shallowRef, computed, watch, onBeforeUnmount, type Ref } from "vue";
 import type { CameraConfig, SerializedSolidData, SerializedTreeNode } from "../types";
 import { useStepViewerStore } from "../stores/useStepViewerStore";
 import { useURDFStore } from "../stores/useURDFStore";
 import {
+  clearAllProjects,
+  closeDatabase,
   deleteProjectRecord,
   findLatestDraft,
   getProject,
@@ -13,12 +15,15 @@ import {
   upsertProject,
 } from "./db";
 import {
+  clearAllProjectDirs,
   deleteProjectDir,
   isOpfsAvailable,
-  projectDirSize,
+  listProjectIds,
+  projectFileSize,
   readProjectBytes,
   readProjectFile,
   readProjectText,
+  removeProjectFile,
   requestPersistence,
   sha256Hex,
   withProjectLock,
@@ -27,6 +32,7 @@ import {
 } from "./opfs";
 import { decodeGeometryCache, encodeGeometryCache } from "./geometryCache";
 import { packProject, saveProjectFile, unpackProject } from "./projectFile";
+import { clearSiteCache, measureSiteCache, type SiteCacheReport } from "./siteCache";
 import {
   applyUrdfSection,
   applyViewportSection,
@@ -42,18 +48,21 @@ const FILE_SNAPSHOT = "snapshot.json";
 const FILE_THUMBNAIL = "thumb.png";
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 
+const hashScratch = new Float64Array(1);
+const hashInts = new Int32Array(hashScratch.buffer);
+
 export interface PersistenceHost {
   getCamera(): CameraConfig | null;
   setCamera(config: Partial<CameraConfig>): void;
   captureThumbnail(): Promise<Blob | null>;
-  parseStep(bytes: Uint8Array, fileName: string): Promise<{
+  parseStep(
+    bytes: Uint8Array,
+    fileName: string,
+  ): Promise<{
     solids: SerializedSolidData[];
     tree: SerializedTreeNode | null;
   }>;
-  rebuildScene(
-    solids: SerializedSolidData[],
-    tree: SerializedTreeNode | null,
-  ): Promise<void>;
+  rebuildScene(solids: SerializedSolidData[], tree: SerializedTreeNode | null): Promise<void>;
   clearWorkspace(): void;
   onStatus?: (message: string, percent: number) => void;
 }
@@ -418,24 +427,183 @@ export function useProjectPersistence(host: PersistenceHost) {
     draft.value = null;
   }
 
-  async function measureProject(id: string): Promise<number> {
-    return projectDirSize(id);
+  async function measureGeometryCache(): Promise<{ bytes: number; count: number }> {
+    if (!available.value) return { bytes: 0, count: 0 };
+    let bytes = 0;
+    let count = 0;
+    for (const id of await listProjectIds()) {
+      const size = await projectFileSize(id, FILE_GEOMETRY);
+      if (size > 0) {
+        bytes += size;
+        count++;
+      }
+    }
+    return { bytes, count };
   }
 
-  const stopWatch = watch(
-    () => [
-      urdf.robot,
-      urdf.collisionConfig,
-      urdf.collisionOverrides,
-      urdf.totalMass,
-      urdf.exportFormat,
-      urdf.baseLinkOrigin,
-      urdf.baseLinkRPY,
-      viewer.modelRotationElements,
-    ],
-    () => scheduleSave(),
-    { deep: true },
-  );
+  async function clearGeometryCache(): Promise<number> {
+    if (!available.value) return 0;
+    let removed = 0;
+    for (const id of await listProjectIds()) {
+      const size = await projectFileSize(id, FILE_GEOMETRY);
+      if (size === 0) continue;
+      await withProjectLock(id, async () => {
+        await removeProjectFile(id, FILE_GEOMETRY);
+      });
+      removed++;
+    }
+    return removed;
+  }
+
+  async function resetSite(): Promise<SiteCacheReport> {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    suspended.value = true;
+
+    try {
+      if (available.value) {
+        try {
+          await clearAllProjectDirs();
+        } catch (error) {
+          console.warn("清理 OPFS 失败:", error);
+        }
+      }
+
+      closeDatabase();
+
+      const report = await clearSiteCache();
+
+      context.value = null;
+      draft.value = null;
+      projects.value = [];
+      lastSavedAt.value = null;
+
+      return report;
+    } finally {
+      suspended.value = false;
+    }
+  }
+
+  async function clearAllData(): Promise<void> {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    suspended.value = true;
+    try {
+      await clearAllProjects();
+      await clearAllProjectDirs();
+      context.value = null;
+      draft.value = null;
+      projects.value = [];
+      lastSavedAt.value = null;
+    } finally {
+      suspended.value = false;
+    }
+  }
+
+  const structureFingerprint = computed(() => {
+    let h = 2166136261;
+    const mixNumber = (value: number | undefined | null): void => {
+      const v = typeof value === "number" && isFinite(value) ? value : 0;
+      hashScratch[0] = v;
+      h = (Math.imul(h ^ hashInts[0], 16777619) ^ hashInts[1]) >>> 0;
+    };
+    const mixText = (value: string | undefined | null): void => {
+      const s = value ?? "";
+      for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+      h = (h ^ s.length) >>> 0;
+    };
+    const mixTriple = (t: readonly number[] | null | undefined): void => {
+      if (!t) {
+        mixNumber(NaN);
+        return;
+      }
+      for (let i = 0; i < t.length; i++) mixNumber(t[i]);
+    };
+
+    const robot = urdf.robot;
+    mixText(robot.name);
+    mixNumber(robot.links.length);
+    mixNumber(robot.joints.length);
+
+    for (const link of robot.links) {
+      mixText(link.id);
+      mixText(link.name);
+      mixNumber(link.solidIds.length);
+      for (const sid of link.solidIds) mixText(sid);
+      const inertial = link.inertial;
+      if (inertial) {
+        mixNumber(inertial.mass);
+        mixTriple(inertial.com);
+        mixTriple(inertial.inertia);
+      } else {
+        mixNumber(NaN);
+      }
+      const masses = link.solidMasses;
+      if (masses) for (const key of Object.keys(masses)) mixNumber(masses[key]);
+    }
+
+    for (const joint of robot.joints) {
+      mixText(joint.id);
+      mixText(joint.name);
+      mixText(joint.type);
+      mixText(joint.parentLinkId);
+      mixText(joint.childLinkId);
+      mixTriple(joint.origin.xyz);
+      mixTriple(joint.origin.rpy);
+      mixTriple(joint.axis);
+      mixTriple(joint.axisOffset);
+      mixNumber(joint.limits.lower);
+      mixNumber(joint.limits.upper);
+      mixNumber(joint.limits.effort);
+      mixNumber(joint.limits.velocity);
+    }
+
+    for (const loop of robot.loops ?? []) {
+      mixText(loop.id);
+      mixText(loop.name);
+      mixText(loop.type);
+      mixText(loop.linkAId);
+      mixText(loop.linkBId);
+      mixTriple(loop.anchor);
+      mixTriple(loop.solref);
+      mixNumber(loop.enabled ? 1 : 0);
+    }
+
+    mixNumber(urdf.totalMass);
+    mixText(urdf.exportFormat);
+    mixTriple(urdf.baseLinkOrigin);
+    mixTriple(urdf.baseLinkRPY);
+    mixNumber(urdf.axisHelperScale);
+    mixNumber(urdf.showFrames ? 1 : 0);
+
+    const collision = urdf.collisionConfig;
+    mixText(collision.mode);
+    mixNumber(collision.margin);
+    mixNumber(collision.sweepCheck ? 1 : 0);
+    mixNumber(collision.sweepSamples);
+    mixNumber(collision.minScale);
+    mixNumber(collision.visible ? 1 : 0);
+    mixNumber(collision.useForExport ? 1 : 0);
+
+    const overrides = urdf.collisionOverrides;
+    for (const key of Object.keys(overrides)) {
+      mixText(key);
+      mixText(overrides[key]);
+    }
+
+    mixTriple(viewer.modelRotationElements);
+    mixNumber(viewer.showAxes ? 1 : 0);
+    mixNumber(viewer.showGrid ? 1 : 0);
+    mixNumber(viewer.globalOpacity);
+
+    return h;
+  });
+
+  const stopWatch = watch(structureFingerprint, () => scheduleSave());
 
   function handleBeforeUnload(): void {
     if (debounceTimer) {
@@ -478,7 +646,11 @@ export function useProjectPersistence(host: PersistenceHost) {
     removeProject,
     renameProject,
     discardDraft,
-    measureProject,
+    measureGeometryCache,
+    clearGeometryCache,
+    clearAllData,
+    resetSite,
+    measureSiteCache,
     flushSave,
     ProjectFormatError,
   };

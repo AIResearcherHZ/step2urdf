@@ -130,10 +130,10 @@ function startDrag(e: MouseEvent): void {
   flex-direction: column;
   width: 280px;
   max-height: 60vh;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  background: var(--panel-face);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.38);
   z-index: 1000;
   overflow: hidden;
 }
@@ -143,8 +143,8 @@ function startDrag(e: MouseEvent): void {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #fafafa;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--panel-bar);
   flex-shrink: 0;
   cursor: move;
   user-select: none;
@@ -153,12 +153,12 @@ function startDrag(e: MouseEvent): void {
     flex: 1;
     font-size: 13px;
     font-weight: 600;
-    color: #303133;
+    color: var(--text-1);
   }
 
   .panel-count {
     font-size: 12px;
-    color: #909399;
+    color: var(--text-2);
   }
 }
 
@@ -174,7 +174,7 @@ function startDrag(e: MouseEvent): void {
   flex-direction: column;
   align-items: center;
   padding: 24px 12px;
-  color: #909399;
+  color: var(--text-2);
   font-size: 13px;
 
   p {
@@ -183,7 +183,7 @@ function startDrag(e: MouseEvent): void {
 
   .hint {
     font-size: 12px;
-    color: #c0c4cc;
+    color: var(--text-3);
     text-align: center;
   }
 }
@@ -196,13 +196,13 @@ function startDrag(e: MouseEvent): void {
 
 .measure-item {
   padding: 8px 10px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fafafa;
+  background: var(--surface-1);
   transition: border-color 0.15s;
 
   &:hover {
-    border-color: #409eff;
+    border-color: var(--accent);
   }
 
   .item-header {
@@ -215,7 +215,7 @@ function startDrag(e: MouseEvent): void {
   .item-distance {
     font-size: 14px;
     font-weight: 600;
-    color: #409eff;
+    color: var(--accent);
   }
 
   .item-coords {
@@ -229,7 +229,7 @@ function startDrag(e: MouseEvent): void {
 
   .coord-label {
     flex-shrink: 0;
-    color: #909399;
+    color: var(--text-2);
     width: 28px;
   }
 

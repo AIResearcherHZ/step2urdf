@@ -1,8 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { ProjectRecord } from "./types";
 
-const AUTOSAVE_ID = "__autosave__";
-
 class ProjectDatabase extends Dexie {
   projects!: EntityTable<ProjectRecord, "id">;
 
@@ -20,8 +18,6 @@ function db(): ProjectDatabase {
   if (!instance) instance = new ProjectDatabase();
   return instance;
 }
-
-export const AUTOSAVE_PROJECT_ID = AUTOSAVE_ID;
 
 export function newProjectId(): string {
   if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
@@ -57,6 +53,13 @@ export async function renameProjectRecord(id: string, name: string): Promise<voi
   await db().projects.update(id, { name, updatedAt: Date.now() });
 }
 
-export async function touchProject(id: string): Promise<void> {
-  await db().projects.update(id, { updatedAt: Date.now() });
+export async function clearAllProjects(): Promise<void> {
+  await db().projects.clear();
+}
+
+export function closeDatabase(): void {
+  try {
+    instance?.close();
+  } catch {}
+  instance = null;
 }

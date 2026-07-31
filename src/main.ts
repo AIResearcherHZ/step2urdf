@@ -1,6 +1,6 @@
+import "element-plus/dist/index.css";
 import "@/styles/reset.scss";
 import "@/styles/index.css";
-import "element-plus/dist/index.css";
 import "@/utils/rem";
 import { createApp } from "vue";
 import { createPinia } from "pinia";
