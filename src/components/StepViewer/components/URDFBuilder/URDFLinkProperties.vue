@@ -65,6 +65,16 @@
             <span v-if="getSolidMass(solidId) !== null" class="solid-mass">
               {{ getSolidMass(solidId)!.toFixed(3) }} kg
             </span>
+            <el-tooltip content="按连通面片拆解为多个 Solid" placement="top" :show-after="500">
+              <el-button
+                text
+                type="success"
+                :icon="Scissor"
+                :loading="splitting"
+                @click="handleSplit([solidId])"
+                class="unbind-btn"
+              />
+            </el-tooltip>
             <el-button
               text
               type="danger"
@@ -89,6 +99,17 @@
                 完成绑定</el-button
               >
             </template>
+            <el-button
+              v-if="link.solidIds.length > 0 && geometryEdit"
+              v-hint="'把该连杆下所有 Solid 按连通面片拆细，用于精确计算质心与惯量'"
+              type="success"
+              plain
+              :icon="Scissor"
+              :loading="splitting"
+              @click="handleSplit(link.solidIds.slice())"
+            >
+              拆解全部
+            </el-button>
           </div>
 
           <div v-if="link.solidIds.length === 0" class="empty-hint">尚未绑定任何 Solid</div>
@@ -150,12 +171,35 @@
 import { ref, computed, watch } from "vue";
 import { vHint } from "../composables/useHintBar";
 import { ElMessage } from "element-plus";
-import { Files, Delete, Paperclip } from "@element-plus/icons-vue";
+import { Files, Delete, Paperclip, Scissor } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
+import { useGeometryEditApi } from "../composables/useGeometryEdit";
 
 const urdfStore = useURDFStore();
 const stepStore = useStepViewerStore();
+const geometryEdit = useGeometryEditApi();
+const splitting = ref(false);
+
+async function handleSplit(solidIds: string[]): Promise<void> {
+  if (!geometryEdit || solidIds.length === 0 || splitting.value) return;
+  splitting.value = true;
+  try {
+    const results = await geometryEdit.splitSolids(solidIds);
+    const total = results.reduce((sum, r) => sum + Math.max(r.parts, 1), 0);
+    if (total <= solidIds.length) {
+      ElMessage.info("这些实体是单一连通体，无需拆解");
+      return;
+    }
+    ElMessage.success(
+      `已拆解为 ${total} 个细 Solid，请重新运行「整机惯量计算」以更新质心与惯量`,
+    );
+  } catch (error) {
+    ElMessage.error(`拆解失败: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    splitting.value = false;
+  }
+}
 
 const openPanels = ref<string[]>(["solids", "physics"]);
 

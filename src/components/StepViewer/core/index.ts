@@ -7,7 +7,32 @@ export { ForwardKinematics } from "./ForwardKinematics";
 export { JointSnapVisualizer } from "./JointSnapVisualizer";
 export { CollisionVisualizer } from "./CollisionVisualizer";
 export { fitLinkShape, separateShapes, shapeLocalMatrix } from "./CollisionSimplifier";
-export { serializeURDF, deserializeURDF } from "./URDFSerializer";
+export { serializeURDF, deserializeURDF, parseURDF } from "./URDFSerializer";
+export { parseMJCF } from "./MJCFParser";
+export {
+  parseRobotText,
+  detectRobotFormat,
+  autoBindSolidsByName,
+  ensureBaseLink,
+  clearRobotBindings,
+  remapRobotSolidIds,
+  ROBOT_UNIT_SCALES,
+} from "./RobotImport";
+export { parseStl, isBinaryStl } from "./StlParser";
+export {
+  splitConnectedComponents,
+  splitSolidWithEdges,
+  componentToSolidData,
+  buildFlatTree,
+  weldVertices,
+  meshVolume,
+} from "./MeshSplitter";
+export {
+  importStlSolids,
+  splitSolidData,
+  disposeMeshImportWorker,
+  MESH_UNIT_SCALES,
+} from "./useMeshImportWorker";
 export { buildAxisFrame, flipAxisFrame, frameToArray, flipRPY } from "./AxisFrame";
 export { collectAxisCandidates, candidateOriginAt } from "./AxisCandidate";
 export {
@@ -39,4 +64,9 @@ export type { JointSnapVisualizerConfig } from "./JointSnapVisualizer";
 export type { CollisionVisualizerConfig } from "./CollisionVisualizer";
 export type { LinkGeometryInput, SeparateOptions } from "./CollisionSimplifier";
 export type { AxisFrame, FrameAxis } from "./AxisFrame";
+export type { URDFParseOptions, RobotParseResult } from "./URDFSerializer";
+export type { RobotFileFormat, RobotImportReport, AutoBindResult } from "./RobotImport";
+export type { RawMesh } from "./StlParser";
+export type { SplitOptions, MeshComponent } from "./MeshSplitter";
+export type { MeshImportOptions, MeshImportWorkerApi } from "./MeshImportWorker";
 export type { AxisCandidate, AxisSnapPoint } from "./AxisCandidate";

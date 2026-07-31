@@ -40,6 +40,8 @@ export class SceneManager {
 
   private axesHelper: THREE.AxesHelper | null = null;
   private gridHelper: THREE.GridHelper | null = null;
+  private axesSize = 100;
+  private gridSize = 500;
   private ambientLight: THREE.AmbientLight;
   private directionalLight: THREE.DirectionalLight;
 
@@ -265,7 +267,8 @@ export class SceneManager {
     }
   }
 
-  showAxes(show: boolean, size: number = 100): void {
+  showAxes(show: boolean, size: number = this.axesSize): void {
+    this.axesSize = size;
     if (show) {
       if (!this.axesHelper) {
         this.axesHelper = new THREE.AxesHelper(size);
@@ -281,7 +284,8 @@ export class SceneManager {
     this.markDirty();
   }
 
-  showGrid(show: boolean, size: number = 500, divisions: number = 50): void {
+  showGrid(show: boolean, size: number = this.gridSize, divisions: number = 50): void {
+    this.gridSize = size;
     if (show) {
       if (!this.gridHelper) {
         this.gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0xcccccc);
@@ -364,6 +368,11 @@ export class SceneManager {
     const fov = this.camera.fov * (Math.PI / 180);
     let cameraDistance = maxDim / (2 * Math.tan(fov / 2));
     cameraDistance *= padding;
+    if (!(cameraDistance > 0) || !isFinite(cameraDistance)) cameraDistance = 100;
+
+    this.controls.minDistance = Math.max(cameraDistance / 500, 1e-4);
+    this.controls.maxDistance = Math.max(cameraDistance * 200, 5000);
+    this.syncHelperScale(maxDim);
 
     const direction = new THREE.Vector3(1, 1, 1).normalize();
     this.camera.position.copy(center).add(direction.multiplyScalar(cameraDistance));
@@ -383,6 +392,29 @@ export class SceneManager {
     }
 
     this.markDirty();
+  }
+
+  private syncHelperScale(maxDim: number): void {
+    if (!(maxDim > 0) || !isFinite(maxDim)) return;
+
+    const magnitude = Math.pow(10, Math.round(Math.log10(maxDim * 4)));
+    if (this.gridSize > 0 && magnitude / this.gridSize < 4 && this.gridSize / magnitude < 4) return;
+
+    this.gridSize = magnitude;
+    this.axesSize = magnitude / 5;
+
+    if (this.gridHelper) {
+      this.scene.remove(this.gridHelper);
+      this.gridHelper.dispose();
+      this.gridHelper = null;
+      this.showGrid(true);
+    }
+    if (this.axesHelper) {
+      this.scene.remove(this.axesHelper);
+      this.axesHelper.dispose();
+      this.axesHelper = null;
+      this.showAxes(true);
+    }
   }
 
   handleViewHelperClick(event: PointerEvent | MouseEvent): boolean {

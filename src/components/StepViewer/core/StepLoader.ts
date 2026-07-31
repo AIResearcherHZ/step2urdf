@@ -99,11 +99,11 @@ export class StepLoader {
     }
 
     const fileName = file.name.toLowerCase();
-    const validExtensions = [".step", ".stp"];
+    const validExtensions = [".step", ".stp", ".stl"];
     const hasValidExtension = validExtensions.some((ext) => fileName.endsWith(ext));
 
     if (!hasValidExtension) {
-      return { valid: false, error: "仅支持 .step 或 .stp 格式文件" };
+      return { valid: false, error: "仅支持 .step / .stp / .stl 格式文件" };
     }
 
     const maxSize = 500 * 1024 * 1024;

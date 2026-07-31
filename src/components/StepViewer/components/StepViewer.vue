@@ -15,6 +15,8 @@
       :is-model-tree-open="modelTreeVisible"
       :project-saving="persistence.saving.value"
       :autosave-hint="autosaveHint"
+      :has-robot-structure="hasRobotStructure"
+      @import-robot="robotImportVisible = true"
       @open-projects="handleOpenProjects"
       @save-project="handleSaveProject"
       @upload="handleFileUpload"
@@ -43,6 +45,7 @@
         @tree-select="handleTreeSelect"
         @solid-hover="handleSolidHover"
         @toggle-solid-visibility="handleToggleSolidVisibility"
+        @split-solid="handleSplitSolid"
         @close="modelTreeVisible = false"
       />
 
@@ -108,6 +111,12 @@
       @clear-site="handleClearSiteCache"
     />
 
+    <RobotImportDialog
+      :visible="robotImportVisible"
+      @close="robotImportVisible = false"
+      @imported="handleRobotImported"
+    />
+
     <JointWizard
       ref="jointWizardRef"
       @created="urdfScene.handleJointCreated"
@@ -146,7 +155,9 @@
         </template>
       </template>
       <span v-else class="status-item">{{
-        occtReady ? "就绪 — 支持 .step / .stp 文件" : "正在加载 OpenCASCADE..."
+        occtReady
+          ? "就绪 — 支持 .step / .stp / .stl 模型与 .urdf / .xml 结构导入"
+          : "正在加载 OpenCASCADE...（STL 与 URDF 导入无需等待）"
       }}</span>
     </div>
   </div>
@@ -165,6 +176,7 @@ import URDFLeftPanel from "./URDFBuilder/URDFLeftPanel.vue";
 import URDFRightPanel from "./URDFBuilder/URDFRightPanel.vue";
 import FloatingJointControl from "./URDFBuilder/FloatingJointControl.vue";
 import JointWizard from "./URDFBuilder/JointWizard.vue";
+import RobotImportDialog from "./URDFBuilder/RobotImportDialog.vue";
 import ProjectManager from "./ProjectManager.vue";
 import { useProjectPersistence } from "../persistence/useProjectPersistence";
 import { estimateStorage } from "../persistence/opfs";
@@ -184,9 +196,22 @@ import {
   type UpAxis,
 } from "../core/ZUpTransform";
 import { useURDFScene } from "./composables/useURDFScene";
+import { useGeometryEdit } from "./composables/useGeometryEdit";
 import { useHintBar } from "./composables/useHintBar";
+import {
+  importStlSolids,
+  disposeMeshImportWorker,
+  MESH_UNIT_SCALES,
+} from "../core/useMeshImportWorker";
 import { formatBytes } from "../utils/format";
-import type { TreeNode, SerializedSolidData, SerializedTreeNode, CameraConfig } from "../types";
+import type {
+  TreeNode,
+  SerializedSolidData,
+  SerializedTreeNode,
+  CameraConfig,
+  ModelUploadOptions,
+  MeshImportSettings,
+} from "../types";
 import { FeatureType, ViewPreset } from "../types";
 
 const props = withDefaults(
@@ -242,7 +267,115 @@ const urdfScene = useURDFScene({
 });
 
 const projectManagerVisible = ref(false);
+const robotImportVisible = ref(false);
 const storageText = ref("");
+
+let currentTree: SerializedTreeNode | null = null;
+
+const hasRobotStructure = computed(
+  () => urdfStore.robot.links.length > 1 || urdfStore.robot.joints.length > 0,
+);
+
+const geometryEdit = useGeometryEdit({
+  getStepLoader: () => stepLoader,
+  getSceneManager: () => sceneManager,
+  getSelectionManager: () => selectionManager,
+  disposeUrdfModules: () => urdfScene.disposeModules(),
+  initUrdfModules: () => urdfScene.initModules(),
+  onGeometryChanged: (solids, tree) => {
+    currentTree = tree;
+    modelTriangles.value = sceneManager?.sceneTriangles ?? 0;
+    modelVertices.value = sceneManager?.sceneVertices ?? 0;
+    void persistence.cacheGeometry(solids, tree);
+  },
+});
+
+async function parseModelBuffer(
+  buffer: ArrayBuffer,
+  fileName: string,
+  mesh?: MeshImportSettings,
+): Promise<{
+  solids: SerializedSolidData[];
+  tree: SerializedTreeNode | null;
+  meshInfo?: { scale: number; diagonal: number; triangles: number };
+}> {
+  if (!stepLoader) throw new Error("解析器尚未就绪");
+
+  if (fileName.toLowerCase().endsWith(".stl")) {
+    const settings: MeshImportSettings = mesh ?? {
+      unit: "auto",
+      split: true,
+      minTriangles: 0,
+      separateTouching: true,
+    };
+    const result = await importStlSolids(
+      buffer,
+      {
+        scale: MESH_UNIT_SCALES[settings.unit] ?? 1,
+        autoScale: settings.unit === "auto",
+        split: settings.split,
+        minTriangles: settings.minTriangles,
+        separateTouching: settings.separateTouching,
+        baseName: fileName.replace(/\.[^.]+$/, "") || "Mesh",
+      },
+      (progress) => store.updateUploadProgress(progress),
+    );
+    return {
+      solids: result.solids,
+      tree: null,
+      meshInfo: { scale: result.scale, diagonal: result.diagonal, triangles: result.triangles },
+    };
+  }
+
+  const parsed = await stepLoader.parseBuffer(buffer, (progress) =>
+    store.updateUploadProgress(progress),
+  );
+  return { solids: parsed.solids, tree: parsed.tree };
+}
+
+function handleRobotImported(): void {
+  urdfScene.initModules();
+  urdfScene.updateFKAndFrames();
+  urdfStore.showFrames = true;
+  nextTick(() => urdfLeftPanelRef.value?.setCurrentNodeById(""));
+}
+
+async function handleSplitSolid(solidId: string): Promise<void> {
+  const solid = store.solidMap.get(solidId);
+  if (!solid) return;
+
+  try {
+    await ElMessageBox.confirm(
+      `将把「${solid.name}」按连通面片拆解为多个独立 Solid，拆解后可分别设定密度/质量，从而得到更精确的连杆质心与惯量。`,
+      "拆解 Solid",
+      { confirmButtonText: "拆解", cancelButtonText: "取消", type: "info" },
+    );
+  } catch {
+    return;
+  }
+
+  await runSplit([solidId]);
+}
+
+async function runSplit(solidIds: string[]): Promise<void> {
+  if (solidIds.length === 0) return;
+
+  store.updateUploadProgress({ status: "parsing", progress: 20, message: "正在拆解实体..." });
+  try {
+    const results = await geometryEdit.splitSolids(solidIds);
+    const total = results.reduce((sum, r) => sum + Math.max(r.parts, 1), 0);
+    store.updateUploadProgress({ status: "success", progress: 100, message: "拆解完成" });
+
+    if (total <= solidIds.length) {
+      ElMessage.info("这些实体是单一连通体，无需拆解");
+      return;
+    }
+    ElMessage.success(`已将 ${solidIds.length} 个实体拆解为 ${total} 个细 Solid`);
+  } catch (error) {
+    store.updateUploadProgress({ status: "error", progress: 0, message: "拆解失败" });
+    ElMessage.error(`拆解失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 async function applyRestoredScene(
   solids: SerializedSolidData[],
@@ -252,6 +385,7 @@ async function applyRestoredScene(
 
   const restored = stepLoader.restoreScene(solids, tree);
   sceneManager.addModel(restored.group);
+  currentTree = tree;
 
   store.setSolids(restored.solids);
   store.setTreeNodes(restored.treeNodes);
@@ -295,13 +429,9 @@ const persistence = useProjectPersistence({
     }
   },
   parseStep: async (bytes, fileName) => {
-    if (!stepLoader) throw new Error("解析器尚未就绪");
     store.setFileName(fileName);
     const copy = bytes.slice();
-    const result = await stepLoader.parseBuffer(copy.buffer as ArrayBuffer, (progress) =>
-      store.updateUploadProgress(progress),
-    );
-    return { solids: result.solids, tree: result.tree };
+    return parseModelBuffer(copy.buffer as ArrayBuffer, fileName);
   },
   rebuildScene: applyRestoredScene,
   clearWorkspace: () => handleClearAll(),
@@ -816,6 +946,7 @@ function disposeViewer(): void {
 
   urdfScene.disposeModules();
   disposeKinematicsWorker();
+  disposeMeshImportWorker();
 
   selectionManager?.dispose();
   sceneManager?.dispose();
@@ -831,22 +962,34 @@ function handleViewHelperClick(event: PointerEvent): void {
   }
 }
 
-async function handleFileUpload(file: File): Promise<void> {
+function validateModelFile(file: File): string | null {
+  if (!file || file.size === 0) return "文件为空";
+  const name = file.name.toLowerCase();
+  if (!/\.(step|stp|stl)$/.test(name)) return "仅支持 .step / .stp / .stl 格式文件";
+  if (file.size > 500 * 1024 * 1024) return "文件大小超过 500MB 限制";
+  return null;
+}
+
+async function handleFileUpload(file: File, options?: ModelUploadOptions): Promise<void> {
   if (!stepLoader) return;
 
-  if (!occtReady.value) {
+  const isStl = file.name.toLowerCase().endsWith(".stl");
+  if (!isStl && !occtReady.value) {
     ElMessage.warning("OpenCASCADE 引擎正在加载，请稍候...");
     return;
   }
 
-  const validation = stepLoader.validateFile(file);
-  if (!validation.valid) {
-    ElMessage.error(validation.error || "文件校验失败");
+  const invalid = validateModelFile(file);
+  if (invalid) {
+    ElMessage.error(invalid);
     return;
   }
 
+  const keepStructure = !!options?.keepStructure && hasRobotStructure.value;
+
   try {
-    handleClearAll();
+    if (keepStructure) handleClearGeometryOnly();
+    else handleClearAll();
     store.setFileName(file.name);
 
     store.updateUploadProgress({
@@ -855,39 +998,28 @@ async function handleFileUpload(file: File): Promise<void> {
       message: "准备加载...",
     });
 
-    const {
-      solids,
-      group,
-      treeNodes,
-      tree: serializedTree,
-    } = await stepLoader.loadFile(file, (progress) => {
-      if (progress.status === "success") {
-        store.updateUploadProgress({
-          status: "parsing",
-          progress: 90,
-          message: "正在渲染模型...",
-        });
-      } else {
-        store.updateUploadProgress(progress);
-      }
+    const buffer = await file.arrayBuffer();
+    const parsed = await parseModelBuffer(buffer, file.name, options?.mesh);
+    if (parsed.solids.length === 0) throw new Error("文件中没有可用的实体");
+
+    store.updateUploadProgress({
+      status: "parsing",
+      progress: 90,
+      message: "正在渲染模型...",
     });
 
-    if (sceneManager) {
-      sceneManager.addModel(group);
-      sceneManager.fitToModel();
-    }
-
-    store.setSolids(solids);
-    store.setTreeNodes(treeNodes);
+    const bindResult = geometryEdit.replaceGeometry(parsed.solids, {
+      keepStructure,
+      autoBind: true,
+      tree: parsed.tree,
+      treeName: file.name,
+      fitView: true,
+    });
 
     if (selectionManager) {
-      selectionManager.setSolids(solids);
       selectionManager.setOpacity(null, store.globalOpacity);
       store.setTransparent(store.globalOpacity < 1);
     }
-
-    modelTriangles.value = sceneManager?.sceneTriangles ?? 0;
-    modelVertices.value = sceneManager?.sceneVertices ?? 0;
 
     await nextTick();
 
@@ -905,9 +1037,25 @@ async function handleFileUpload(file: File): Promise<void> {
       message: "加载完成",
     });
 
-    initURDFModules();
     modelTreeVisible.value = true;
-    ElMessage.success("模型加载成功");
+
+    if (keepStructure) {
+      urdfScene.updateFKAndFrames();
+      ElMessage.success(
+        `几何已替换，URDF 结构保留；按名称自动绑定 ${bindResult.bound} 个 Solid` +
+          (bindResult.unmatched.length > 0 ? `，${bindResult.unmatched.length} 个未匹配` : ""),
+      );
+    } else if (parsed.meshInfo) {
+      const { scale, diagonal, triangles } = parsed.meshInfo;
+      const unitNote =
+        options?.mesh?.unit === "auto" && scale !== 1 ? `，已自动按米换算（×${scale}）` : "";
+      ElMessage.success(
+        `STL 加载成功：${triangles} 个三角面 → ${parsed.solids.length} 个 Solid，` +
+          `整体尺寸约 ${diagonal.toFixed(1)} mm${unitNote}`,
+      );
+    } else {
+      ElMessage.success(`模型加载成功，共 ${parsed.solids.length} 个实体`);
+    }
 
     void (async () => {
       try {
@@ -918,7 +1066,7 @@ async function handleFileUpload(file: File): Promise<void> {
           if (solid.serializedData) cached.push(solid.serializedData);
         }
         if (cached.length > 0) {
-          await persistence.cacheGeometry(cached, serializedTree);
+          await persistence.cacheGeometry(cached, currentTree);
         }
         await persistence.flushSave();
         await persistence.saveThumbnail();
@@ -1037,6 +1185,26 @@ function handleClearMeasurements(): void {
   sceneManager?.markDirty();
 }
 
+function handleClearGeometryOnly(): void {
+  handleClearSelection();
+  lineMeasurementTool?.clearAll();
+  store.clearLineMeasurements();
+  if (store.isLineMeasureActive) {
+    store.setLineMeasureActive(false);
+    lineMeasurementTool?.deactivate();
+    selectionManager?.setEnabled(true);
+  }
+
+  urdfStore.clearCollisionShapes();
+  urdfScene.disposeModules();
+  sceneManager?.clearModels();
+  store.clearModel();
+  currentTree = null;
+  modelTriangles.value = 0;
+  modelVertices.value = 0;
+  frameDrawCalls.value = 0;
+}
+
 function handleClearAll(): void {
   handleClearSelection();
   if (lineMeasurementTool) {
@@ -1054,6 +1222,7 @@ function handleClearAll(): void {
 
   sceneManager?.clearModels();
   store.clearModel();
+  currentTree = null;
   modelTriangles.value = 0;
   modelVertices.value = 0;
   frameDrawCalls.value = 0;

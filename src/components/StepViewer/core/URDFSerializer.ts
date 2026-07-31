@@ -7,6 +7,8 @@ import type {
   JointType,
   InertialParams,
   CollisionShape,
+  LoopClosure,
+  LoopConstraintType,
 } from "../types";
 import * as THREE from "three";
 import { rotateInertiaTensor } from "./ZUpTransform";
@@ -252,7 +254,23 @@ function subRevolute(
   ].join("\n");
 }
 
-export function deserializeURDF(xml: string): URDFRobot {
+export interface URDFParseOptions {
+  unitScale?: number;
+}
+
+export interface RobotParseResult {
+  robot: URDFRobot;
+  warnings: string[];
+}
+
+export function deserializeURDF(xml: string, options?: URDFParseOptions): URDFRobot {
+  return parseURDF(xml, options).robot;
+}
+
+export function parseURDF(xml: string, options?: URDFParseOptions): RobotParseResult {
+  const s = options?.unitScale ?? 1;
+  const warnings: string[] = [];
+
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "application/xml");
   const errorNode = doc.querySelector("parsererror");
@@ -281,7 +299,12 @@ export function deserializeURDF(xml: string): URDFRobot {
 
     const inertialEl = el.querySelector("inertial");
     if (inertialEl) {
-      link.inertial = parseInertial(inertialEl);
+      const inertial = parseInertial(inertialEl);
+      link.inertial = {
+        mass: inertial.mass,
+        com: [inertial.com[0] * s, inertial.com[1] * s, inertial.com[2] * s],
+        inertia: inertial.inertia,
+      };
     }
 
     links.push(link);
@@ -293,36 +316,235 @@ export function deserializeURDF(xml: string): URDFRobot {
   const jointEls = robotEl.querySelectorAll(":scope > joint");
   jointEls.forEach((el, idx) => {
     const name = el.getAttribute("name") || `Joint_${idx + 1}`;
-    const type = (el.getAttribute("type") || "fixed") as JointType;
-    const parentEl = el.querySelector("parent");
-    const childEl = el.querySelector("child");
-    const parentName = parentEl?.getAttribute("link") || "";
-    const childName = childEl?.getAttribute("link") || "";
+    const rawType = el.getAttribute("type") || "fixed";
+    const type = (KNOWN_JOINT_TYPES.has(rawType) ? rawType : "fixed") as JointType;
+    if (!KNOWN_JOINT_TYPES.has(rawType)) {
+      warnings.push(`关节 ${name} 的类型 "${rawType}" 不受支持，已按 fixed 处理`);
+    }
 
-    const originEl = el.querySelector("origin");
-    const origin = parseOrigin(originEl);
+    const parentName = el.querySelector("parent")?.getAttribute("link") || "";
+    const childName = el.querySelector("child")?.getAttribute("link") || "";
+    const origin = parseOrigin(el.querySelector("origin"));
+    const axis = parseVec3(el.querySelector("axis")?.getAttribute("xyz") || "0 0 1");
+    const limits = parseLimits(el.querySelector("limit"));
 
-    const axisEl = el.querySelector("axis");
-    const axis = parseVec3(axisEl?.getAttribute("xyz") || "0 0 1") as [number, number, number];
+    if (el.querySelector("mimic")) {
+      warnings.push(`关节 ${name} 含 <mimic>，本工具暂不支持联动，已忽略`);
+    }
 
-    const limitEl = el.querySelector("limit");
-    const limits = parseLimits(limitEl);
-
+    const linear = type === "prismatic" || type === "planar";
     joints.push({
       id: `joint_${idx + 1}`,
       name,
       type,
       parentLinkId: nameToId.get(parentName) || parentName,
       childLinkId: nameToId.get(childName) || childName,
-      origin,
+      origin: {
+        xyz: [origin.xyz[0] * s, origin.xyz[1] * s, origin.xyz[2] * s],
+        rpy: origin.rpy,
+      },
       axis,
-      limits,
+      limits: linear
+        ? {
+            lower: limits.lower * s,
+            upper: limits.upper * s,
+            effort: limits.effort,
+            velocity: limits.velocity * s,
+          }
+        : limits,
       currentValue: 0,
       axisOffset: [0, 0, 0] as [number, number, number],
     });
   });
 
-  return { name: robotName, links, joints, loops: [] };
+  mergeBallChains(links, joints, warnings);
+
+  const loops = extractLoopComments(robotEl, links, s);
+  const derived = splitClosureJoints(links, joints, warnings);
+  loops.push(...derived);
+
+  renumberIds(links, joints, loops);
+
+  return { robot: { name: robotName, links, joints, loops }, warnings };
+}
+
+const KNOWN_JOINT_TYPES = new Set([
+  "revolute",
+  "continuous",
+  "prismatic",
+  "fixed",
+  "floating",
+  "planar",
+  "ball",
+]);
+
+function mergeBallChains(links: URDFLink[], joints: URDFJoint[], warnings: string[]): void {
+  const byName = new Map(joints.map((j) => [j.name, j]));
+  const linkByName = new Map(links.map((l) => [l.name, l]));
+  const removedJoints = new Set<string>();
+  const removedLinks = new Set<string>();
+
+  for (const joint of joints) {
+    if (!joint.name.endsWith("_rx")) continue;
+    const base = joint.name.slice(0, -3);
+    const ry = byName.get(`${base}_ry`);
+    const rz = byName.get(`${base}_rz`);
+    const dummyX = linkByName.get(`${base}_ball_x`);
+    const dummyY = linkByName.get(`${base}_ball_y`);
+    if (!ry || !rz || !dummyX || !dummyY) continue;
+    if (joint.childLinkId !== dummyX.id || ry.parentLinkId !== dummyX.id) continue;
+    if (ry.childLinkId !== dummyY.id || rz.parentLinkId !== dummyY.id) continue;
+
+    joint.name = base;
+    joint.type = "ball";
+    joint.childLinkId = rz.childLinkId;
+    joint.axis = [0, 0, 1];
+    joint.ballValue = [0, 0, 0];
+    removedJoints.add(ry.id);
+    removedJoints.add(rz.id);
+    removedLinks.add(dummyX.id);
+    removedLinks.add(dummyY.id);
+    warnings.push(`已将 ${base}_rx/_ry/_rz 三段链合并为 ball 关节 ${base}`);
+  }
+
+  if (removedJoints.size === 0) return;
+  for (let i = joints.length - 1; i >= 0; i--) {
+    if (removedJoints.has(joints[i].id)) joints.splice(i, 1);
+  }
+  for (let i = links.length - 1; i >= 0; i--) {
+    if (removedLinks.has(links[i].id)) links.splice(i, 1);
+  }
+}
+
+function splitClosureJoints(
+  links: URDFLink[],
+  joints: URDFJoint[],
+  warnings: string[],
+): LoopClosure[] {
+  const loops: LoopClosure[] = [];
+  const seenChild = new Set<string>();
+  const nameOf = new Map(links.map((l) => [l.id, l.name]));
+  const worldPositions = computeWorldPositions(links, joints);
+
+  for (let i = 0; i < joints.length; i++) {
+    const joint = joints[i];
+    if (!seenChild.has(joint.childLinkId)) {
+      seenChild.add(joint.childLinkId);
+      continue;
+    }
+
+    const parentWorld = worldPositions.get(joint.parentLinkId) ?? new THREE.Matrix4();
+    const anchorWorld = new THREE.Vector3(
+      joint.origin.xyz[0],
+      joint.origin.xyz[1],
+      joint.origin.xyz[2],
+    ).applyMatrix4(parentWorld);
+
+    loops.push({
+      id: `loop_${loops.length + 1}`,
+      name: joint.name || `loop_${loops.length + 1}`,
+      type: joint.type === "fixed" ? "weld" : "connect",
+      linkAId: joint.parentLinkId,
+      linkBId: joint.childLinkId,
+      anchor: [anchorWorld.x, anchorWorld.y, anchorWorld.z],
+      solref: [0.02, 1],
+      enabled: true,
+    });
+    warnings.push(
+      `关节 ${joint.name} 使 ${nameOf.get(joint.childLinkId) ?? joint.childLinkId} 出现第二个父连杆，已转换为闭链约束`,
+    );
+    joints.splice(i, 1);
+    i--;
+  }
+
+  return loops;
+}
+
+function computeWorldPositions(
+  links: URDFLink[],
+  joints: URDFJoint[],
+): Map<string, THREE.Matrix4> {
+  const result = new Map<string, THREE.Matrix4>();
+  const childIds = new Set(joints.map((j) => j.childLinkId));
+  const jointsByParent = new Map<string, URDFJoint[]>();
+  for (const joint of joints) {
+    const list = jointsByParent.get(joint.parentLinkId) ?? [];
+    list.push(joint);
+    jointsByParent.set(joint.parentLinkId, list);
+  }
+
+  const queue: string[] = [];
+  for (const link of links) {
+    if (!childIds.has(link.id)) {
+      result.set(link.id, new THREE.Matrix4());
+      queue.push(link.id);
+    }
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const base = result.get(current) ?? new THREE.Matrix4();
+    for (const joint of jointsByParent.get(current) ?? []) {
+      if (result.has(joint.childLinkId)) continue;
+      const local = new THREE.Matrix4().makeRotationFromEuler(
+        new THREE.Euler(joint.origin.rpy[0], joint.origin.rpy[1], joint.origin.rpy[2], "ZYX"),
+      );
+      local.setPosition(joint.origin.xyz[0], joint.origin.xyz[1], joint.origin.xyz[2]);
+      result.set(joint.childLinkId, new THREE.Matrix4().multiplyMatrices(base, local));
+      queue.push(joint.childLinkId);
+    }
+  }
+
+  return result;
+}
+
+function extractLoopComments(robotEl: Element, links: URDFLink[], unitScale: number): LoopClosure[] {
+  const loops: LoopClosure[] = [];
+  const idOfName = new Map(links.map((l) => [l.name, l.id]));
+
+  robotEl.childNodes.forEach((node) => {
+    if (node.nodeType !== 8) return;
+    const text = node.textContent ?? "";
+    const lineRe = /^\s*(\S+):\s*(connect|weld)\s+(\S+)\s*<->\s*(\S+)\s*@\s*\(([^)]*)\)\s*$/gim;
+    let match: RegExpExecArray | null;
+    while ((match = lineRe.exec(text)) !== null) {
+      const linkAId = idOfName.get(match[3]);
+      const linkBId = idOfName.get(match[4]);
+      if (!linkAId || !linkBId) continue;
+      const anchor = parseVec3(match[5].replace(/,/g, " "));
+      loops.push({
+        id: `loop_${loops.length + 1}`,
+        name: match[1],
+        type: match[2].toLowerCase() as LoopConstraintType,
+        linkAId,
+        linkBId,
+        anchor: [anchor[0] * unitScale, anchor[1] * unitScale, anchor[2] * unitScale],
+        solref: [0.02, 1],
+        enabled: true,
+      });
+    }
+  });
+
+  return loops;
+}
+
+function renumberIds(links: URDFLink[], joints: URDFJoint[], loops: LoopClosure[]): void {
+  const linkIdMap = new Map<string, string>();
+  links.forEach((link, index) => {
+    const next = `link_${index + 1}`;
+    linkIdMap.set(link.id, next);
+    link.id = next;
+  });
+  joints.forEach((joint, index) => {
+    joint.id = `joint_${index + 1}`;
+    joint.parentLinkId = linkIdMap.get(joint.parentLinkId) ?? joint.parentLinkId;
+    joint.childLinkId = linkIdMap.get(joint.childLinkId) ?? joint.childLinkId;
+  });
+  loops.forEach((loop, index) => {
+    loop.id = `loop_${index + 1}`;
+    loop.linkAId = linkIdMap.get(loop.linkAId) ?? loop.linkAId;
+    loop.linkBId = linkIdMap.get(loop.linkBId) ?? loop.linkBId;
+  });
 }
 
 export function collisionPose(

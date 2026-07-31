@@ -21,6 +21,12 @@ import type {
 } from "../types";
 import { ForwardKinematics } from "../core/ForwardKinematics";
 import { fitLinkShape, separateShapes, type LinkGeometryInput } from "../core/CollisionSimplifier";
+import {
+  autoBindSolidsByName,
+  clearRobotBindings,
+  remapRobotSolidIds,
+  type AutoBindResult,
+} from "../core/RobotImport";
 import { useStepViewerStore } from "./useStepViewerStore";
 
 const BASE_LINK_ID = "link_base";
@@ -407,8 +413,49 @@ export const useURDFStore = defineStore("urdf", () => {
     bindingMode.value = { active: false, targetLinkId: null };
   }
 
+  function renameLinkId(target: URDFRobot, from: string, to: string): void {
+    for (const link of target.links) {
+      if (link.id === from) link.id = to;
+    }
+    for (const joint of target.joints) {
+      if (joint.parentLinkId === from) joint.parentLinkId = to;
+      if (joint.childLinkId === from) joint.childLinkId = to;
+    }
+    for (const loop of target.loops ?? []) {
+      if (loop.linkAId === from) loop.linkAId = to;
+      if (loop.linkBId === from) loop.linkBId = to;
+    }
+  }
+
+  function normalizeBaseLinkId(target: URDFRobot, currentId: string): void {
+    if (currentId === BASE_LINK_ID) return;
+    if (target.links.some((l) => l.id === BASE_LINK_ID)) {
+      renameLinkId(target, BASE_LINK_ID, `${BASE_LINK_ID}_alt`);
+    }
+    renameLinkId(target, currentId, BASE_LINK_ID);
+  }
+
+  function clearSolidBindings(): void {
+    clearRobotBindings(robot.value);
+    collisionShapes.value = [];
+    collisionConflicts.value = [];
+  }
+
+  function remapSolidIds(mapping: Map<string, string[]>): void {
+    remapRobotSolidIds(robot.value, mapping);
+    collisionShapes.value = [];
+    collisionConflicts.value = [];
+  }
+
+  function bindSolidsByName(solids: { id: string; name: string }[]): AutoBindResult {
+    return autoBindSolidsByName(robot.value, solids);
+  }
+
   function importRobot(imported: URDFRobot): void {
-    if (!imported.links.some((l) => l.name === "base_link")) {
+    const named = imported.links.find((l) => l.name === "base_link");
+    if (named) {
+      normalizeBaseLinkId(imported, named.id);
+    } else {
       imported.links.unshift({
         id: BASE_LINK_ID,
         name: "base_link",
@@ -692,6 +739,9 @@ export const useURDFStore = defineStore("urdf", () => {
     clearCollisionShapes,
 
     importRobot,
+    clearSolidBindings,
+    remapSolidIds,
+    bindSolidsByName,
     clearAll,
   };
 });

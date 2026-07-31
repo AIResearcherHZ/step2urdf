@@ -170,6 +170,20 @@ export interface EdgeGeometryData {
   endAngle?: number;
 }
 
+export type MeshUnit = "auto" | "mm" | "cm" | "m" | "inch";
+
+export interface MeshImportSettings {
+  unit: MeshUnit;
+  split: boolean;
+  minTriangles: number;
+  separateTouching: boolean;
+}
+
+export interface ModelUploadOptions {
+  keepStructure: boolean;
+  mesh: MeshImportSettings;
+}
+
 export interface SolidMassProps {
   volume: number;
   com: [number, number, number];

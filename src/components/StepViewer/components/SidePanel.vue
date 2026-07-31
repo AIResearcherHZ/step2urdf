@@ -16,6 +16,7 @@
           @select="handleTreeSelect"
           @solid-hover="handleSolidHover"
           @toggle-solid-visibility="handleToggleSolidVisibility"
+          @split-solid="(id: string) => emit('splitSolid', id)"
         />
 
         <div class="resize-handle" @mousedown.prevent="startResize" />
@@ -37,6 +38,7 @@ const emit = defineEmits<{
   (e: "treeSelect", node: TreeNode, multi: boolean): void;
   (e: "solidHover", solidId: string | null): void;
   (e: "toggleSolidVisibility", solidId: string): void;
+  (e: "splitSolid", solidId: string): void;
   (e: "close"): void;
 }>();
 

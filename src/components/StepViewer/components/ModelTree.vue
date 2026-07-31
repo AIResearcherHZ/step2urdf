@@ -7,7 +7,7 @@
 
     <div v-if="!store.hasModel" class="tree-empty">
       <p>暂无模型</p>
-      <p class="hint">请上传 STEP 文件</p>
+      <p class="hint">请上传 STEP / STL 文件</p>
     </div>
 
     <div v-else class="tree-content" ref="treeContainerRef">
@@ -42,6 +42,27 @@
             <span class="node-label" :title="data.name">{{ data.name }}</span>
             <span v-if="data.children && data.children.length" class="node-count">
               ({{ data.children.length }})
+            </span>
+            <span
+              v-if="data.type === 'solid'"
+              class="node-split"
+              title="按连通面片拆解为多个 Solid"
+              @click.stop="handleSplit(data)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <line x1="20" y1="4" x2="8.12" y2="15.88" />
+                <line x1="14.47" y1="14.48" x2="20" y2="20" />
+                <line x1="8.12" y1="8.12" x2="12" y2="12" />
+              </svg>
             </span>
             <span
               v-if="data.type === 'solid'"
@@ -91,6 +112,7 @@ const emit = defineEmits<{
   (e: "select", node: TreeNode, multi: boolean): void;
   (e: "solidHover", solidId: string | null): void;
   (e: "toggleSolidVisibility", solidId: string): void;
+  (e: "splitSolid", solidId: string): void;
 }>();
 
 const treeRef = ref();
@@ -197,6 +219,12 @@ function handleToggleVisibility(data: any): void {
   if (node.type !== "solid" || node.solidIndex === undefined) return;
   const solidId = `solid_${node.solidIndex}`;
   emit("toggleSolidVisibility", solidId);
+}
+
+function handleSplit(data: any): void {
+  const node = data as TreeNode;
+  if (node.type !== "solid" || node.solidIndex === undefined) return;
+  emit("splitSolid", `solid_${node.solidIndex}`);
 }
 
 function isSolidVisible(data: any): boolean {
@@ -376,6 +404,32 @@ watch(
     font-size: 11px;
     color: var(--el-text-color-placeholder, #c0c4cc);
     margin-left: 2px;
+  }
+
+  .node-split {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-2);
+    opacity: 0;
+    margin-left: 2px;
+    padding: 2px;
+    border-radius: 3px;
+    transition:
+      opacity 0.15s,
+      color 0.15s,
+      background-color 0.15s;
+
+    &:hover {
+      background-color: rgba(103, 194, 58, 0.14);
+      color: #67c23a;
+    }
+  }
+
+  &:hover .node-split {
+    opacity: 1;
   }
 
   .node-visibility {

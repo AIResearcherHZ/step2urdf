@@ -3,14 +3,25 @@
     <div class="toolbar-left">
       <div class="toolbar-section">
         <el-button
-          v-hint="occtReady ? '选择并导入 STEP / STP 模型文件' : '正在加载 OpenCASCADE 引擎...'"
+          v-hint="
+            occtReady
+              ? '选择并导入 STEP / STP / STL 模型文件'
+              : 'OpenCASCADE 引擎加载中，STL 可直接导入'
+          "
           type="primary"
-          :loading="isLoading || !occtReady"
+          :loading="isLoading"
           :icon="UploadFilled"
-          :disabled="isLoading || !occtReady"
+          :disabled="isLoading"
           @click="openUploadDialog"
         >
-          {{ isLoading ? "加载中..." : !occtReady ? "引擎加载中..." : "导入模型" }}
+          {{ isLoading ? "加载中..." : "导入模型" }}
+        </el-button>
+        <el-button
+          v-hint="'导入 URDF / MJCF(xml)，重建连杆-关节树与闭链约束，可随后替换 STEP 几何'"
+          :icon="Share"
+          @click="$emit('importRobot')"
+        >
+          导入结构
         </el-button>
         <div v-if="!occtReady" class="wasm-progress">
           <el-progress
@@ -59,7 +70,7 @@
             :auto-upload="false"
             :show-file-list="false"
             :multiple="false"
-            accept=".step,.stp"
+            accept=".step,.stp,.stl"
             :on-change="handleElUploadChange"
           >
             <div class="upload-placeholder">
@@ -73,6 +84,7 @@
               <div class="uph-tags">
                 <el-tag size="small" type="primary" effect="light" round>.STEP</el-tag>
                 <el-tag size="small" type="primary" effect="light" round>.STP</el-tag>
+                <el-tag size="small" type="success" effect="light" round>.STL</el-tag>
                 <span class="uph-size-note">最大上传限制300MB</span>
               </div>
             </div>
@@ -109,6 +121,54 @@
               </el-tooltip>
             </div>
           </transition>
+
+          <div v-if="isStlPending" class="mesh-options">
+            <div class="mesh-options-title">STL 网格选项</div>
+            <div class="mesh-option-row">
+              <span class="mesh-option-label">长度单位</span>
+              <el-select v-model="meshUnit" size="small" style="width: 130px">
+                <el-option label="自动识别" value="auto" />
+                <el-option label="毫米 mm" value="mm" />
+                <el-option label="厘米 cm" value="cm" />
+                <el-option label="米 m" value="m" />
+                <el-option label="英寸 inch" value="inch" />
+              </el-select>
+            </div>
+            <div class="mesh-option-row">
+              <span class="mesh-option-label">按连通面片拆解为多个 Solid</span>
+              <el-switch v-model="meshSplit" />
+            </div>
+            <div class="mesh-option-row" v-if="meshSplit">
+              <span class="mesh-option-label">分离仅贴合接触的零件（推荐）</span>
+              <el-switch v-model="meshSeparateTouching" />
+            </div>
+            <div class="mesh-option-row" v-if="meshSplit">
+              <span class="mesh-option-label">忽略小于 N 个三角面的碎片</span>
+              <el-input-number
+                v-model="meshMinTriangles"
+                :min="0"
+                :max="100000"
+                :step="4"
+                size="small"
+                controls-position="right"
+                style="width: 120px"
+              />
+            </div>
+            <p class="mesh-option-hint">
+              内部统一使用毫米；「自动识别」按包围盒判断，整体尺寸小于 10 时视为米并放大 1000
+              倍。拆解基于半边拓扑：仅贴合接触（共面、共棱）的零件会被判为不同实体，不会把电机和结构件并成一个。
+            </p>
+          </div>
+
+          <div v-if="canKeepStructure" class="mesh-options">
+            <div class="mesh-option-row">
+              <span class="mesh-option-label">保留当前 URDF 结构并按名称自动绑定</span>
+              <el-switch v-model="keepStructure" />
+            </div>
+            <p class="mesh-option-hint">
+              开启后只替换几何：连杆、关节、闭链与惯性设置全部保留，新几何会按名称自动重新绑定。
+            </p>
+          </div>
         </div>
 
         <template #footer>
@@ -244,6 +304,7 @@ import { ElMessage } from "element-plus";
 import { vHint } from "./composables/useHintBar";
 import { formatBytes } from "../utils/format";
 import type { UploadFile, UploadInstance } from "element-plus";
+import type { MeshUnit, ModelUploadOptions } from "../types";
 import {
   UploadFilled,
   Aim,
@@ -254,12 +315,14 @@ import {
   CircleCheckFilled,
   FolderOpened,
   Select,
+  Share,
 } from "@element-plus/icons-vue";
 
 const props = defineProps<{
   fileName: string;
   isLoading: boolean;
   hasModel: boolean;
+  hasRobotStructure?: boolean;
   hasSelection: boolean;
   showAxes: boolean;
   showGrid: boolean;
@@ -274,7 +337,8 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "upload", file: File): void;
+  (e: "upload", file: File, options: ModelUploadOptions): void;
+  (e: "importRobot"): void;
   (e: "fitView"): void;
   (e: "toggleAxes"): void;
   (e: "toggleGrid"): void;
@@ -294,27 +358,40 @@ const uploadDialogVisible = ref(false);
 const pendingFile = ref<File | null>(null);
 const elUploadRef = ref<UploadInstance>();
 
+const meshUnit = ref<MeshUnit>("auto");
+const meshSplit = ref(true);
+const meshMinTriangles = ref(0);
+const meshSeparateTouching = ref(true);
+const keepStructure = ref(false);
+
 const fileExtension = computed(() => {
-  if (!pendingFile.value) return "";
-  return pendingFile.value.name.toLowerCase().endsWith(".step") ? "STEP" : "STP";
+  const name = pendingFile.value?.name.toLowerCase() ?? "";
+  if (name.endsWith(".stl")) return "STL";
+  if (name.endsWith(".step")) return "STEP";
+  return "STP";
 });
 
-function isValidStepFile(file: File): boolean {
+const isStlPending = computed(() => fileExtension.value === "STL");
+
+const canKeepStructure = computed(() => !!props.hasRobotStructure && !!pendingFile.value);
+
+function isValidModelFile(file: File): boolean {
   const name = file.name.toLowerCase();
-  return name.endsWith(".step") || name.endsWith(".stp");
+  return name.endsWith(".step") || name.endsWith(".stp") || name.endsWith(".stl");
 }
 
 function openUploadDialog(): void {
   pendingFile.value = null;
   uploadDialogVisible.value = true;
+  keepStructure.value = !!props.hasRobotStructure;
   setTimeout(() => elUploadRef.value?.clearFiles(), 80);
 }
 
 function handleElUploadChange(uploadFile: UploadFile): void {
   const raw = uploadFile.raw;
   if (!raw) return;
-  if (!isValidStepFile(raw)) {
-    ElMessage.warning("仅支持 .step / .stp 格式的文件");
+  if (!isValidModelFile(raw)) {
+    ElMessage.warning("仅支持 .step / .stp / .stl 格式的文件");
     elUploadRef.value?.clearFiles();
     return;
   }
@@ -328,7 +405,15 @@ function removePendingFile(): void {
 
 function confirmUpload(): void {
   if (!pendingFile.value) return;
-  emit("upload", pendingFile.value);
+  emit("upload", pendingFile.value, {
+    keepStructure: canKeepStructure.value && keepStructure.value,
+    mesh: {
+      unit: meshUnit.value,
+      split: meshSplit.value,
+      minTriangles: meshMinTriangles.value,
+      separateTouching: meshSeparateTouching.value,
+    },
+  });
   uploadDialogVisible.value = false;
   pendingFile.value = null;
 }
@@ -650,6 +735,41 @@ function openGitHub(): void {
       color: #f56c6c;
       background: #fef0f0;
     }
+  }
+}
+
+.mesh-options {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #ebeef5);
+  border-radius: 8px;
+  background: #fafbfc;
+
+  .mesh-options-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #303133;
+    margin-bottom: 6px;
+  }
+
+  .mesh-option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+  }
+
+  .mesh-option-label {
+    font-size: 12px;
+    color: #606266;
+  }
+
+  .mesh-option-hint {
+    margin: 6px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #909399;
   }
 }
 
