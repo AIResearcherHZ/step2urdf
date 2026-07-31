@@ -23,6 +23,13 @@
         >
           导入结构
         </el-button>
+        <el-button
+          v-hint="'拖入整个机器人文件夹（URDF/MJCF + meshes），选择描述文件后直接装配并可视化'"
+          :icon="FolderAdd"
+          @click="$emit('importRobotPackage')"
+        >
+          导入机器人包
+        </el-button>
         <div v-if="!occtReady" class="wasm-progress">
           <el-progress
             :percentage="Math.round(occtLoadProgress ?? 0)"
@@ -316,6 +323,7 @@ import {
   FolderOpened,
   Select,
   Share,
+  FolderAdd,
 } from "@element-plus/icons-vue";
 
 const props = defineProps<{
@@ -339,6 +347,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "upload", file: File, options: ModelUploadOptions): void;
   (e: "importRobot"): void;
+  (e: "importRobotPackage"): void;
   (e: "fitView"): void;
   (e: "toggleAxes"): void;
   (e: "toggleGrid"): void;

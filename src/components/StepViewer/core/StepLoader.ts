@@ -323,7 +323,45 @@ export class StepLoader {
       .map(([t, c]) => `${t}${c}`)
       .join(",");
 
-    return `${posCount}_${idxCount}_${faceCount}_${w}_${h}_${d}_${faceTypeStr}`;
+    const shapeHash = this.computeShapeHash(solidData, stats);
+
+    return `${posCount}_${idxCount}_${faceCount}_${w}_${h}_${d}_${faceTypeStr}_${shapeHash}`;
+  }
+
+  private computeShapeHash(solidData: SerializedSolidData, stats: PositionStats): string {
+    const positions = solidData.positions;
+    const indices = solidData.indices;
+
+    const extent = Math.max(
+      stats.max.x - stats.min.x,
+      stats.max.y - stats.min.y,
+      stats.max.z - stats.min.z,
+    );
+    const quantum = extent > 0 ? extent / 4096 : 1;
+    const cx = stats.centroid.x;
+    const cy = stats.centroid.y;
+    const cz = stats.centroid.z;
+
+    let h1 = 0x811c9dc5;
+    let h2 = 0x01000193;
+
+    const mix = (value: number): void => {
+      h1 = Math.imul(h1 ^ value, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 + value, 0x85ebca6b) >>> 0;
+      h2 = ((h2 << 13) | (h2 >>> 19)) >>> 0;
+    };
+
+    for (let i = 0; i < positions.length; i += 3) {
+      mix(Math.round((positions[i] - cx) / quantum));
+      mix(Math.round((positions[i + 1] - cy) / quantum));
+      mix(Math.round((positions[i + 2] - cz) / quantum));
+    }
+
+    for (let i = 0; i < indices.length; i++) {
+      mix(indices[i]);
+    }
+
+    return `${h1.toString(36)}${h2.toString(36)}`;
   }
 
   private getOrCreateMaterial(

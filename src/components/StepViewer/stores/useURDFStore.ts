@@ -23,6 +23,7 @@ import { ForwardKinematics } from "../core/ForwardKinematics";
 import { fitLinkShape, separateShapes, type LinkGeometryInput } from "../core/CollisionSimplifier";
 import {
   autoBindSolidsByName,
+  bindSolidsByLinkMap,
   clearRobotBindings,
   remapRobotSolidIds,
   type AutoBindResult,
@@ -451,6 +452,13 @@ export const useURDFStore = defineStore("urdf", () => {
     return autoBindSolidsByName(robot.value, solids);
   }
 
+  function bindSolidsByLinkNames(
+    linkSolidNames: Map<string, string[]>,
+    solids: { id: string; name: string }[],
+  ): AutoBindResult {
+    return bindSolidsByLinkMap(robot.value, linkSolidNames, solids);
+  }
+
   function importRobot(imported: URDFRobot): void {
     const named = imported.links.find((l) => l.name === "base_link");
     if (named) {
@@ -742,6 +750,7 @@ export const useURDFStore = defineStore("urdf", () => {
     clearSolidBindings,
     remapSolidIds,
     bindSolidsByName,
+    bindSolidsByLinkNames,
     clearAll,
   };
 });

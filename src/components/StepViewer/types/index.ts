@@ -368,6 +368,16 @@ export interface URDFRobot {
   loops: LoopClosure[];
 }
 
+export interface RobotPackagePayload {
+  robot: URDFRobot;
+  solids: SerializedSolidData[];
+  tree: SerializedTreeNode;
+  linkSolidNames: Map<string, string[]>;
+  fileName: string;
+  triangles: number;
+  warnings: string[];
+}
+
 export type CollisionShapeType = "box" | "cylinder" | "sphere" | "convex";
 
 export type CollisionMode = "auto" | CollisionShapeType;

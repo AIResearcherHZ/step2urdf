@@ -1,4 +1,5 @@
 const KNOWN_DATABASES = ["step2urdf"];
+const OPFS_ROOT_DIR = "step2urdf";
 
 export interface SiteCacheUsage {
   caches: number;
@@ -36,20 +37,43 @@ async function serviceWorkerRegistrations(): Promise<readonly ServiceWorkerRegis
   }
 }
 
+function databaseExists(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let existed = true;
+    try {
+      const request = indexedDB.open(name);
+      request.onupgradeneeded = () => {
+        existed = false;
+      };
+      request.onsuccess = () => {
+        request.result.close();
+        if (!existed) indexedDB.deleteDatabase(name);
+        resolve(existed);
+      };
+      request.onerror = () => resolve(false);
+      request.onblocked = () => resolve(true);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 async function databaseNames(): Promise<string[]> {
-  const found = new Set<string>(KNOWN_DATABASES);
   try {
     const enumerate = (
       indexedDB as IDBFactory & { databases?: () => Promise<{ name?: string }[]> }
     ).databases;
     if (typeof enumerate === "function") {
       const list = await enumerate.call(indexedDB);
-      for (const entry of list) {
-        if (entry?.name) found.add(entry.name);
-      }
+      const names = list.map((entry) => entry?.name).filter((name): name is string => !!name);
+      return Array.from(new Set(names));
     }
   } catch {}
-  return Array.from(found);
+
+  const checked = await Promise.all(
+    KNOWN_DATABASES.map(async (name) => ((await databaseExists(name)) ? name : null)),
+  );
+  return checked.filter((name): name is string => name !== null);
 }
 
 function storageKeyCount(storage: Storage | undefined): number {
@@ -152,5 +176,18 @@ export async function clearSiteCache(): Promise<SiteCacheReport> {
     else failures.push(`数据库 ${name}`);
   }
 
+  if (!(await clearOpfsRoot())) failures.push("OPFS 文件");
+
   return report;
+}
+
+async function clearOpfsRoot(): Promise<boolean> {
+  try {
+    if (typeof navigator.storage?.getDirectory !== "function") return true;
+    const base = await navigator.storage.getDirectory();
+    await base.removeEntry(OPFS_ROOT_DIR, { recursive: true });
+    return true;
+  } catch (error) {
+    return (error as DOMException)?.name === "NotFoundError";
+  }
 }

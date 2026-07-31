@@ -16,8 +16,13 @@ export const ROBOT_UNIT_SCALES: Record<string, number> = {
 };
 
 export function detectRobotFormat(text: string): RobotFileFormat | null {
-  if (/<\s*mujoco[\s>]/i.test(text)) return "mjcf";
+  const root = new DOMParser()
+    .parseFromString(text, "application/xml")
+    .documentElement?.tagName?.toLowerCase();
+  if (root === "robot") return "urdf";
+  if (root === "mujoco") return "mjcf";
   if (/<\s*robot[\s>]/i.test(text)) return "urdf";
+  if (/<\s*mujoco[\s>]/i.test(text)) return "mjcf";
   return null;
 }
 
@@ -103,6 +108,62 @@ export function autoBindSolidsByName(robot: URDFRobot, solids: SolidRef[]): Auto
       bound++;
     }
     matchedLinks.add(hit.link.name);
+  }
+
+  return { bound, matchedLinks: [...matchedLinks], unmatchedSolids };
+}
+
+export function bindSolidsByLinkMap(
+  robot: URDFRobot,
+  linkSolidNames: Map<string, string[]>,
+  solids: SolidRef[],
+): AutoBindResult {
+  const idByName = new Map<string, string[]>();
+  for (const solid of solids) {
+    const list = idByName.get(solid.name) ?? [];
+    list.push(solid.id);
+    idByName.set(solid.name, list);
+  }
+
+  const linkByName = new Map(robot.links.map((l) => [l.name, l]));
+  const matchedLinks = new Set<string>();
+  const unmatchedSolids: string[] = [];
+  const consumed = new Set<string>();
+  let bound = 0;
+
+  for (const [linkName, names] of linkSolidNames) {
+    const link = linkByName.get(linkName);
+    if (!link) {
+      unmatchedSolids.push(...names);
+      continue;
+    }
+
+    for (const name of names) {
+      const ids = idByName.get(name);
+      if (!ids || ids.length === 0) {
+        unmatchedSolids.push(name);
+        continue;
+      }
+      const id = ids.find((candidate) => !consumed.has(candidate));
+      if (!id) {
+        unmatchedSolids.push(name);
+        continue;
+      }
+      consumed.add(id);
+      if (!link.solidIds.includes(id)) {
+        link.solidIds.push(id);
+        bound++;
+      }
+      matchedLinks.add(link.name);
+    }
+  }
+
+  const leftovers = solids.filter((s) => !consumed.has(s.id));
+  if (leftovers.length > 0) {
+    const fallback = autoBindSolidsByName(robot, leftovers);
+    bound += fallback.bound;
+    fallback.matchedLinks.forEach((name) => matchedLinks.add(name));
+    unmatchedSolids.push(...fallback.unmatchedSolids);
   }
 
   return { bound, matchedLinks: [...matchedLinks], unmatchedSolids };

@@ -19,7 +19,7 @@
     </div>
 
     <div class="control-row">
-      <el-button type="primary" plain style="width: 100%" @click="openInertiaDialog">
+      <el-button type="primary" plain style="width: 100%" @click="openInertiaPanel">
         整机惯量计算
       </el-button>
     </div>
@@ -75,124 +75,140 @@
     </div>
   </div>
 
-  <el-dialog
-    v-model="inertiaDialogVisible"
-    title="整机惯量计算"
-    width="780px"
-    :close-on-click-modal="false"
-    append-to-body
-  >
-    <div class="inertia-dialog-body">
-      <el-alert
-        title="展开连杆可为每个 Solid 单独设置质量；连杆质心按各 Solid 质量加权求得，惯量按平行轴定理精确合成"
-        type="info"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 12px"
-      />
-
-      <div class="param-row">
-        <span class="param-label">整机总质量</span>
-        <el-input-number
-          v-model="totalMass"
-          :min="0.001"
-          :max="100000"
-          :precision="3"
-          :step="1"
-          controls-position="right"
-          style="width: 160px"
-        />
-        <span class="param-unit">kg</span>
-      </div>
-
-      <div v-if="computing" class="progress-row">
-        <el-icon class="is-loading">
-          <Loading />
-        </el-icon>
-        <span>{{ progressText }}</span>
-      </div>
-
-      <div v-if="computedResults.length > 0" class="result-section">
-        <el-divider style="margin: 10px 0" />
-        <div class="result-header">
-          <span class="result-title">计算结果（共 {{ computedResults.length }} 个连杆）</span>
-          <div class="header-actions">
-            <el-button text type="info" @click="redistributeByVolume">按体积重新分配</el-button>
-            <el-button type="success" plain @click="applyResults">应用到所有连杆</el-button>
+  <Teleport to="body">
+    <Transition name="fk-panel">
+      <div
+        v-show="inertiaPanelVisible"
+        class="fk-floating-panel inertia-panel"
+        :style="panelStyle"
+        @mousedown.stop
+      >
+        <div class="fk-title-bar" @mousedown="startDrag">
+          <span class="fk-title">⚖️ 整机惯量计算</span>
+          <div class="fk-title-actions">
+            <el-button size="small" text circle @click="inertiaPanelVisible = false">✕</el-button>
           </div>
         </div>
-        <el-table
-          :data="computedResults"
-          :row-key="(row: ResultRow) => row.linkId"
-          style="margin-top: 4px"
-        >
-          <el-table-column type="expand">
-            <template #default="{ row }">
-              <div class="solid-detail">
-                <div class="solid-detail-title">Solid 质量分配（{{ row.solids.length }} 个）</div>
-                <div v-for="s in row.solids" :key="s.solidId" class="solid-mass-row">
-                  <span class="solid-mass-name" :title="s.name">{{ s.name }}</span>
-                  <span class="solid-mass-vol">{{ formatVolume(s.volume) }}</span>
+
+        <div class="fk-body inertia-body">
+          <el-alert
+            title="展开连杆可为每个 Solid 单独设置质量；连杆质心按各 Solid 质量加权求得，惯量按平行轴定理精确合成"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 12px"
+          />
+
+          <div class="param-row">
+            <span class="param-label">整机总质量</span>
+            <el-input-number
+              v-model="totalMass"
+              :min="0.001"
+              :max="100000"
+              :precision="3"
+              :step="1"
+              controls-position="right"
+              style="width: 160px"
+            />
+            <span class="param-unit">kg</span>
+          </div>
+
+          <div v-if="computing" class="progress-row">
+            <el-icon class="is-loading">
+              <Loading />
+            </el-icon>
+            <span>{{ progressText }}</span>
+          </div>
+
+          <div v-else-if="computedResults.length === 0" class="empty-hint">
+            尚无惯量数据，点击下方"开始计算"生成
+          </div>
+
+          <div v-if="computedResults.length > 0" class="result-section">
+            <el-divider style="margin: 10px 0" />
+            <div class="result-header">
+              <span class="result-title">计算结果（共 {{ computedResults.length }} 个连杆）</span>
+              <div class="header-actions">
+                <el-button text type="info" @click="redistributeByVolume">按体积重新分配</el-button>
+              </div>
+            </div>
+            <el-table
+              :data="computedResults"
+              :row-key="(row: ResultRow) => row.linkId"
+              style="margin-top: 4px"
+            >
+              <el-table-column type="expand">
+                <template #default="{ row }">
+                  <div class="solid-detail">
+                    <div class="solid-detail-title">Solid 质量分配（{{ row.solids.length }} 个）</div>
+                    <div v-for="s in row.solids" :key="s.solidId" class="solid-mass-row">
+                      <span class="solid-mass-name" :title="s.name">{{ s.name }}</span>
+                      <span class="solid-mass-vol">{{ formatVolume(s.volume) }}</span>
+                      <el-input-number
+                        v-model="s.mass"
+                        :min="0.0001"
+                        :max="100000"
+                        :precision="4"
+                        :step="0.05"
+                        controls-position="right"
+                        style="width: 132px"
+                        @change="recalcRow(row as ResultRow)"
+                      />
+                      <span class="solid-mass-unit">kg</span>
+                      <span class="solid-mass-com">质心 {{ formatCom(s.com) }}</span>
+                    </div>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="name"
+                label="连杆"
+                min-width="90"
+                show-overflow-tooltip
+                align="center"
+              />
+              <el-table-column label="Solids" width="72" align="center">
+                <template #default="{ row }">{{ row.solids.length }}</template>
+              </el-table-column>
+              <el-table-column label="质量 (kg)" width="152" align="center">
+                <template #default="{ row }">
                   <el-input-number
-                    v-model="s.mass"
+                    v-model="row.mass"
                     :min="0.0001"
                     :max="100000"
                     :precision="4"
-                    :step="0.05"
+                    :step="0.1"
                     controls-position="right"
-                    style="width: 132px"
-                    @change="recalcRow(row as ResultRow)"
+                    style="width: 136px"
+                    @change="onLinkMassChange(row as ResultRow)"
                   />
-                  <span class="solid-mass-unit">kg</span>
-                  <span class="solid-mass-com">质心 {{ formatCom(s.com) }}</span>
-                </div>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="name"
-            label="连杆"
-            min-width="90"
-            show-overflow-tooltip
-            align="center"
-          />
-          <el-table-column label="Solids" width="72" align="center">
-            <template #default="{ row }">{{ row.solids.length }}</template>
-          </el-table-column>
-          <el-table-column label="质量 (kg)" width="152" align="center">
-            <template #default="{ row }">
-              <el-input-number
-                v-model="row.mass"
-                :min="0.0001"
-                :max="100000"
-                :precision="4"
-                :step="0.1"
-                controls-position="right"
-                style="width: 136px"
-                @change="onLinkMassChange(row as ResultRow)"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column label="质心 (mm)" min-width="160" align="center">
-            <template #default="{ row }">
-              {{ formatCom(row.com) }}
-            </template>
-          </el-table-column>
-        </el-table>
-        <p class="edit-hint">
-          修改连杆质量会按当前各 Solid 质量比例同步缩放；单独修改 Solid 质量则连杆质量取各 Solid
-          之和。
-        </p>
-      </div>
-    </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="质心 (mm)" min-width="160" align="center">
+                <template #default="{ row }">
+                  {{ formatCom(row.com) }}
+                </template>
+              </el-table-column>
+            </el-table>
+            <p class="edit-hint">
+              修改连杆质量会按当前各 Solid 质量比例同步缩放；单独修改 Solid 质量则连杆质量取各 Solid
+              之和。
+            </p>
+          </div>
+        </div>
 
-    <template #footer>
-      <el-button @click="inertiaDialogVisible = false">关闭</el-button>
-      <el-button type="primary" :loading="computing" :disabled="totalMass <= 0" @click="runCompute">
-        开始计算
-      </el-button>
-    </template>
-  </el-dialog>
+        <div class="inertia-footer">
+          <el-button text @click="inertiaPanelVisible = false">关闭</el-button>
+          <el-button type="primary" :loading="computing" :disabled="totalMass <= 0" @click="runCompute()">
+            {{ computedResults.length > 0 ? "重新计算" : "开始计算" }}
+          </el-button>
+          <el-button type="success" plain :disabled="computedResults.length === 0" @click="applyResults">
+            应用到所有连杆
+          </el-button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -252,7 +268,46 @@ function formatVolume(vMm3: number): string {
   return `${vMm3.toFixed(1)} mm³`;
 }
 
-const inertiaDialogVisible = ref(false);
+const inertiaPanelVisible = ref(false);
+
+const posX = ref(Math.max(40, window.innerWidth * 0.5 - 340));
+const posY = ref(Math.max(40, window.innerHeight * 0.5 - 260));
+const panelStyle = computed(() => ({
+  left: `${posX.value}px`,
+  top: `${posY.value}px`,
+}));
+
+function startDrag(e: MouseEvent): void {
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startPosX = posX.value;
+  const startPosY = posY.value;
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    posX.value = Math.max(
+      0,
+      Math.min(window.innerWidth - 100, startPosX + moveEvent.clientX - startX),
+    );
+    posY.value = Math.max(
+      0,
+      Math.min(window.innerHeight - 50, startPosY + moveEvent.clientY - startY),
+    );
+  };
+
+  const onMouseUp = () => {
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
+
+  document.body.style.cursor = "move";
+  document.body.style.userSelect = "none";
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
+}
+
 const totalMass = computed({
   get: () => urdfStore.totalMass,
   set: (v: number) => {
@@ -272,9 +327,17 @@ interface ResultRow {
 }
 const computedResults = ref<ResultRow[]>([]);
 
-function openInertiaDialog(): void {
-  computedResults.value = [];
-  inertiaDialogVisible.value = true;
+function openInertiaPanel(): void {
+  inertiaPanelVisible.value = true;
+
+  const hasExisting = urdfStore.robot.links.some((l) => l.solidIds.length > 0 && l.inertial);
+  if (!hasExisting) {
+    computedResults.value = [];
+    return;
+  }
+  if (computedResults.value.length === 0) {
+    runCompute(true);
+  }
 }
 
 function recalcRow(row: ResultRow): void {
@@ -312,7 +375,7 @@ function syncTotalMass(): void {
   totalMass.value = parseFloat(computedResults.value.reduce((s, r) => s + r.mass, 0).toFixed(6));
 }
 
-async function runCompute(): Promise<void> {
+async function runCompute(silent = false): Promise<void> {
   if (computing.value) return;
 
   const existingSolidMass = new Map<string, number>();
@@ -322,9 +385,13 @@ async function runCompute(): Promise<void> {
   let isRerun = computedResults.value.length > 0;
   if (!isRerun) {
     for (const l of urdfStore.robot.links) {
-      if (!l.solidMasses) continue;
-      for (const [sid, m] of Object.entries(l.solidMasses)) {
-        if (m > 0) existingSolidMass.set(sid, m);
+      if (l.solidMasses) {
+        for (const [sid, m] of Object.entries(l.solidMasses)) {
+          if (m > 0) existingSolidMass.set(sid, m);
+        }
+      } else if (l.inertial && l.inertial.mass > 0 && l.solidIds.length > 0) {
+        const evenMass = l.inertial.mass / l.solidIds.length;
+        for (const sid of l.solidIds) existingSolidMass.set(sid, evenMass);
       }
     }
     isRerun = existingSolidMass.size > 0;
@@ -349,7 +416,7 @@ async function runCompute(): Promise<void> {
     }
 
     if (linkInputs.length === 0) {
-      ElMessage.warning("没有绑定几何体的连杆，无法计算");
+      if (!silent) ElMessage.warning("没有绑定几何体的连杆，无法计算");
       return;
     }
 
@@ -370,8 +437,10 @@ async function runCompute(): Promise<void> {
     computedResults.value = newResults;
     syncTotalMass();
 
-    const hint = isRerun ? "（已保留手动编辑的 Solid 质量）" : "";
-    ElMessage.success(`计算完成，共 ${newResults.length} 个连杆 / ${solidCount} 个 Solid${hint}`);
+    if (!silent) {
+      const hint = isRerun ? "（已保留手动编辑的 Solid 质量）" : "";
+      ElMessage.success(`计算完成，共 ${newResults.length} 个连杆 / ${solidCount} 个 Solid${hint}`);
+    }
   } catch (e) {
     ElMessage.error(`计算失败: ${(e as Error).message}`);
   } finally {
@@ -395,7 +464,7 @@ function applyResults(): void {
     count++;
   }
   ElMessage.success(`已将惯性参数应用到 ${count} 个连杆`);
-  inertiaDialogVisible.value = false;
+  inertiaPanelVisible.value = false;
 }
 </script>
 
@@ -411,7 +480,7 @@ function applyResults(): void {
   gap: 6px;
   padding: 4px 0;
   font-size: 12px;
-  color: #303133;
+  color: var(--text-1);
 }
 
 .control-label {
@@ -451,10 +520,6 @@ function applyResults(): void {
   flex-wrap: wrap;
 }
 
-.inertia-dialog-body {
-  padding: 0 4px;
-}
-
 .param-row {
   display: flex;
   align-items: center;
@@ -464,14 +529,14 @@ function applyResults(): void {
 
 .param-label {
   flex-shrink: 0;
-  font-size: 16px;
-  color: #303133;
+  font-size: 13px;
+  color: var(--text-1);
   width: 80px;
 }
 
 .param-unit {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-2);
 }
 
 .progress-row {
@@ -479,8 +544,15 @@ function applyResults(): void {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #409eff;
+  color: var(--accent);
   margin-bottom: 8px;
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+  padding: 12px 0;
 }
 
 .result-section {
@@ -497,8 +569,9 @@ function applyResults(): void {
   }
 
   .result-title {
-    font-size: 16px;
-    color: #606266;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-1);
   }
 
   .edit-hint {
@@ -510,13 +583,13 @@ function applyResults(): void {
 
 .solid-detail {
   padding: 6px 12px 8px 40px;
-  background: #fafbfc;
+  background: var(--el-fill-color-lighter);
 }
 
 .solid-detail-title {
   font-size: 12px;
   font-weight: 600;
-  color: #606266;
+  color: var(--text-2);
   margin-bottom: 6px;
 }
 
@@ -529,7 +602,7 @@ function applyResults(): void {
 
 .solid-mass-name {
   font-size: 12px;
-  color: #303133;
+  color: var(--text-1);
   width: 160px;
   flex-shrink: 0;
   overflow: hidden;
@@ -559,5 +632,100 @@ function applyResults(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fk-floating-panel {
+  position: fixed;
+  z-index: 2000;
+  width: 320px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-face);
+  border: 1px solid var(--panel-edge);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.38);
+  overflow: hidden;
+}
+
+.fk-title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--panel-bar);
+  border-bottom: 1px solid var(--line-strong);
+  cursor: move;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.fk-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.fk-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fk-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 2px;
+  }
+}
+
+.inertia-panel {
+  width: 660px;
+  max-height: 70vh;
+}
+
+.inertia-body {
+  padding: 12px;
+}
+
+.inertia-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-strong);
+  flex-shrink: 0;
+}
+
+.fk-panel-enter-active {
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+}
+
+.fk-panel-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.fk-panel-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+}
+
+.fk-panel-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
 }
 </style>

@@ -1,14 +1,10 @@
 import * as THREE from "three";
-import { ArcballControls } from "three/examples/jsm/controls/ArcballControls.js";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import type { ViewPreset, CameraConfig } from "../types";
-import {
-  createRenderer,
-  configureRenderer,
-  takeScreenshot,
-  type RendererType,
-  type UniversalRenderer,
-} from "./RendererFactory";
+import { createRenderer, configureRenderer, takeScreenshot, type RendererType, type UniversalRenderer } from "./RendererFactory";
+
+const WORLD_UP = new THREE.Vector3(0, 0, 1);
 
 export interface SceneManagerConfig {
   container: HTMLElement;
@@ -25,7 +21,7 @@ export class SceneManager {
   public scene: THREE.Scene;
   public camera: THREE.PerspectiveCamera;
   public renderer!: UniversalRenderer;
-  public controls: ArcballControls & { target: THREE.Vector3 };
+  public controls: OrbitControls;
   public viewHelper: ViewHelper | null = null;
   public rendererType: RendererType = "webgl";
 
@@ -67,34 +63,26 @@ export class SceneManager {
     this.scene.background = new THREE.Color(config.backgroundColor ?? 0xf5f5f5);
 
     this.camera = new THREE.PerspectiveCamera(45, this.width / this.height, 0.1, 10000);
-    this.camera.position.set(100, 100, 100);
+    this.camera.up.copy(WORLD_UP);
+    this.camera.position.set(100, -100, 100);
 
     this.initPromise = this.initRenderer(config);
 
     const tempCanvas = document.createElement("canvas");
     this.container.appendChild(tempCanvas);
 
-    this.controls = new ArcballControls(this.camera, tempCanvas, null) as ArcballControls & {
-      target: THREE.Vector3;
-    };
-    this.controls.enableAnimations = false;
-    this.controls.setGizmosVisible(false);
-    this.controls.minDistance = 1;
-    this.controls.maxDistance = 5000;
-
-    this.controls.addEventListener("change", () => {
-      this.markDirty();
-    });
+    this.controls = new OrbitControls(this.camera, tempCanvas);
+    this.configureControls();
 
     this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     this.scene.add(this.ambientLight);
 
     this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    this.directionalLight.position.set(100, 100, 50);
+    this.directionalLight.position.set(100, -50, 100);
     this.scene.add(this.directionalLight);
 
     const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-    fillLight.position.set(-100, -50, -100);
+    fillLight.position.set(-100, 100, -50);
     this.scene.add(fillLight);
 
     this.modelGroup = new THREE.Group();
@@ -117,9 +105,9 @@ export class SceneManager {
       {
         antialias: config.antialias !== false,
         alpha: true,
-        preserveDrawingBuffer: true,
+        preserveDrawingBuffer: true
       },
-      config.preferWebGPU !== false,
+      config.preferWebGPU !== false
     );
 
     this.renderer = renderer;
@@ -128,7 +116,7 @@ export class SceneManager {
     configureRenderer(renderer, type, {
       width: this.width,
       height: this.height,
-      shadowMapEnabled: true,
+      shadowMapEnabled: true
     });
 
     const tempCanvas = this.container.querySelector("canvas");
@@ -138,19 +126,10 @@ export class SceneManager {
     this.container.appendChild(renderer.domElement);
 
     this.controls.dispose();
-    this.controls = new ArcballControls(
-      this.camera,
-      renderer.domElement,
-      null,
-    ) as ArcballControls & { target: THREE.Vector3 };
-    this.controls.enableAnimations = false;
-    this.controls.setGizmosVisible(false);
-    this.controls.minDistance = 1;
-    this.controls.maxDistance = 5000;
+    this.controls = new OrbitControls(this.camera, renderer.domElement);
+    this.configureControls();
 
-    this.controls.addEventListener("change", () => {
-      this.markDirty();
-    });
+    this.syncControlsToCamera();
 
     this.viewHelper = new ViewHelper(this.camera, renderer.domElement);
     this.viewHelper.center = this.controls.target;
@@ -189,7 +168,7 @@ export class SceneManager {
   private computeSceneStats(): void {
     let totalVertices = 0;
     let totalTriangles = 0;
-    this.modelGroup.traverse((obj) => {
+    this.modelGroup.traverse(obj => {
       if (obj instanceof THREE.Mesh) {
         const geo = obj.geometry as THREE.BufferGeometry;
         const posAttr = geo.getAttribute("position");
@@ -204,6 +183,57 @@ export class SceneManager {
     });
     this.sceneTriangles = Math.round(totalTriangles);
     this.sceneVertices = totalVertices;
+  }
+
+  private configureControls(): void {
+    this.controls.enableDamping = false;
+    this.controls.screenSpacePanning = true;
+    this.controls.minDistance = 1;
+    this.controls.maxDistance = 5000;
+    this.controls.rotateSpeed = 0.9;
+    this.controls.zoomSpeed = 1.1;
+    this.controls.panSpeed = 1;
+
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
+
+    this.controls.addEventListener("change", () => {
+      this.markDirty();
+    });
+  }
+
+  private nudgeOffPole(): void {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const radius = offset.length();
+    if (radius <= 0) return;
+
+    const horizontal = Math.hypot(offset.x, offset.y);
+    const minHorizontal = radius * 1e-3;
+    if (horizontal >= minHorizontal) return;
+
+    if (horizontal > 0) {
+      const k = minHorizontal / horizontal;
+      offset.x *= k;
+      offset.y *= k;
+    } else {
+      offset.y = -minHorizontal;
+    }
+    offset.setLength(radius);
+    this.camera.position.copy(this.controls.target).add(offset);
+  }
+
+  private syncControlsToCamera(): void {
+    this.camera.up.copy(WORLD_UP);
+    this.nudgeOffPole();
+    this.camera.updateMatrixWorld(true);
+    this.controls.update();
   }
 
   private startRenderLoop() {
@@ -221,12 +251,17 @@ export class SceneManager {
           this.viewHelper.update(delta);
           this.markDirty();
         }
-        this._viewHelperWasAnimating = viewHelperAnimating;
       }
 
-      if (!viewHelperAnimating) {
+      if (viewHelperAnimating) {
+        this.camera.up.copy(WORLD_UP);
+      } else {
+        if (this._viewHelperWasAnimating) {
+          this.syncControlsToCamera();
+        }
         this.controls.update();
       }
+      this._viewHelperWasAnimating = viewHelperAnimating;
 
       const shouldRender = this._needsRender || this.isAnimating || viewHelperAnimating;
 
@@ -248,7 +283,7 @@ export class SceneManager {
 
         this.frameDrawCalls = this.renderer.info?.render?.calls ?? 0;
 
-        this.renderCallbacks.forEach((callback) => callback());
+        this.renderCallbacks.forEach(callback => callback());
 
         this._needsRender = false;
       }
@@ -289,7 +324,8 @@ export class SceneManager {
     if (show) {
       if (!this.gridHelper) {
         this.gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0xcccccc);
-        this.gridHelper.position.y = -0.01;
+        this.gridHelper.rotation.x = Math.PI / 2;
+        this.gridHelper.position.z = -0.01;
         this.scene.add(this.gridHelper);
       }
     } else {
@@ -322,7 +358,7 @@ export class SceneManager {
       this.disposeObject(child, materials);
     }
 
-    materials.forEach((m) => m.dispose());
+    materials.forEach(m => m.dispose());
 
     this.computeSceneStats();
     this.markDirty();
@@ -342,7 +378,7 @@ export class SceneManager {
       }
       if (object.material) {
         if (Array.isArray(object.material)) {
-          object.material.forEach((m) => out.add(m));
+          object.material.forEach(m => out.add(m));
         } else {
           out.add(object.material);
         }
@@ -351,7 +387,7 @@ export class SceneManager {
     if (object instanceof THREE.InstancedMesh) {
       object.dispose();
     }
-    object.children.forEach((child) => this.disposeObject(child, out));
+    object.children.forEach(child => this.disposeObject(child, out));
   }
 
   fitToModel(padding: number = 1.5): void {
@@ -374,12 +410,12 @@ export class SceneManager {
     this.controls.maxDistance = Math.max(cameraDistance * 200, 5000);
     this.syncHelperScale(maxDim);
 
-    const direction = new THREE.Vector3(1, 1, 1).normalize();
+    const direction = new THREE.Vector3(1, -1, 1).normalize();
     this.camera.position.copy(center).add(direction.multiplyScalar(cameraDistance));
-    this.camera.up.set(0, 1, 0);
+    this.camera.up.copy(WORLD_UP);
 
     this.controls.target.copy(center);
-    this.controls.update();
+    this.syncControlsToCamera();
 
     this.camera.near = cameraDistance / 100;
     this.camera.far = cameraDistance * 100;
@@ -443,22 +479,20 @@ export class SceneManager {
     const maxDim = Math.max(size.x, size.y, size.z) * 2;
 
     let position: THREE.Vector3;
-    let up = new THREE.Vector3(0, 1, 0);
+    const up = WORLD_UP.clone();
 
     switch (preset) {
       case "front":
-        position = new THREE.Vector3(0, 0, maxDim);
+        position = new THREE.Vector3(0, -maxDim, 0);
         break;
       case "back":
-        position = new THREE.Vector3(0, 0, -maxDim);
+        position = new THREE.Vector3(0, maxDim, 0);
         break;
       case "top":
-        position = new THREE.Vector3(0, maxDim, 0);
-        up = new THREE.Vector3(0, 0, -1);
+        position = new THREE.Vector3(0, -maxDim * 1e-4, maxDim);
         break;
       case "bottom":
-        position = new THREE.Vector3(0, -maxDim, 0);
-        up = new THREE.Vector3(0, 0, 1);
+        position = new THREE.Vector3(0, -maxDim * 1e-4, -maxDim);
         break;
       case "left":
         position = new THREE.Vector3(-maxDim, 0, 0);
@@ -468,7 +502,7 @@ export class SceneManager {
         break;
       case "isometric":
       default:
-        position = new THREE.Vector3(maxDim, maxDim * 0.8, maxDim);
+        position = new THREE.Vector3(maxDim, -maxDim, maxDim * 0.8);
         break;
     }
 
@@ -480,16 +514,11 @@ export class SceneManager {
       this.camera.position.copy(position);
       this.camera.up.copy(up);
       this.controls.target.copy(center);
-      this.controls.update();
+      this.syncControlsToCamera();
     }
   }
 
-  private animateCameraTo(
-    position: THREE.Vector3,
-    target: THREE.Vector3,
-    up: THREE.Vector3,
-    duration: number = 500,
-  ): void {
+  private animateCameraTo(position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3, duration: number = 500): void {
     const startPosition = this.camera.position.clone();
     const startTarget = this.controls.target.clone();
     const startUp = this.camera.up.clone();
@@ -505,7 +534,7 @@ export class SceneManager {
       this.camera.position.lerpVectors(startPosition, position, easeT);
       this.controls.target.lerpVectors(startTarget, target, easeT);
       this.camera.up.lerpVectors(startUp, up, easeT);
-      this.controls.update();
+      this.syncControlsToCamera();
 
       if (this.viewHelper) {
         this.viewHelper.center.copy(this.controls.target);
@@ -529,13 +558,13 @@ export class SceneManager {
       up: this.camera.up.clone(),
       fov: this.camera.fov,
       near: this.camera.near,
-      far: this.camera.far,
+      far: this.camera.far
     };
   }
 
   setCameraConfig(config: Partial<CameraConfig>, animate: boolean = false): void {
     if (animate && config.position && config.target) {
-      this.animateCameraTo(config.position, config.target, config.up || new THREE.Vector3(0, 1, 0));
+      this.animateCameraTo(config.position, config.target, config.up || WORLD_UP.clone());
     } else {
       if (config.position) this.camera.position.copy(config.position);
       if (config.target) this.controls.target.copy(config.target);
@@ -544,7 +573,7 @@ export class SceneManager {
       if (config.near) this.camera.near = config.near;
       if (config.far) this.camera.far = config.far;
       this.camera.updateProjectionMatrix();
-      this.controls.update();
+      this.syncControlsToCamera();
       this.markDirty();
     }
   }

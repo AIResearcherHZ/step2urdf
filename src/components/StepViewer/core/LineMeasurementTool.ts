@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
-import type { ArcballControls } from "three/examples/jsm/controls/ArcballControls.js";
+import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export interface LineMeasurementData {
   id: string;
@@ -23,7 +23,7 @@ export interface LineMeasurementToolConfig {
   camera: THREE.Camera;
   domElement: HTMLElement;
   container: HTMLElement;
-  controls: ArcballControls;
+  controls: OrbitControls;
   labelRenderer?: CSS2DRenderer;
   onRenderRequest?: () => void;
   onLineAdded?: (line: LineMeasurementData) => void;
@@ -35,7 +35,7 @@ export class LineMeasurementTool {
   private camera: THREE.Camera;
   private domElement: HTMLElement;
   private container: HTMLElement;
-  private controls: ArcballControls;
+  private controls: OrbitControls;
   private labelRenderer?: CSS2DRenderer;
   private raycaster: THREE.Raycaster;
   private mouse: THREE.Vector2;
@@ -66,10 +66,9 @@ export class LineMeasurementTool {
   private boundHandleContextMenu: (e: MouseEvent) => void;
 
   private mouseDownPos = { x: 0, y: 0 };
-  private isDragging = false;
+  private pointerMoved = false;
   private readonly DRAG_THRESHOLD = 5;
   private boundHandleMouseDown: (e: MouseEvent) => void;
-  private boundHandleMouseUp: (e: MouseEvent) => void;
 
   private cachedMeshes: THREE.Mesh[] = [];
   private cachedRect: DOMRect | null = null;
@@ -97,7 +96,6 @@ export class LineMeasurementTool {
     this.boundHandleKeyDown = this.handleKeyDown.bind(this);
     this.boundHandleContextMenu = this.handleContextMenu.bind(this);
     this.boundHandleMouseDown = this.handleMouseDown.bind(this);
-    this.boundHandleMouseUp = this.handleMouseUp.bind(this);
   }
 
   get isActive(): boolean {
@@ -113,7 +111,6 @@ export class LineMeasurementTool {
     this.domElement.addEventListener("click", this.boundHandleClick);
     this.domElement.addEventListener("mousemove", this.boundHandleMouseMove);
     this.domElement.addEventListener("mousedown", this.boundHandleMouseDown);
-    this.domElement.addEventListener("mouseup", this.boundHandleMouseUp);
     this.domElement.addEventListener("contextmenu", this.boundHandleContextMenu);
     window.addEventListener("keydown", this.boundHandleKeyDown);
 
@@ -129,7 +126,6 @@ export class LineMeasurementTool {
     this.domElement.removeEventListener("click", this.boundHandleClick);
     this.domElement.removeEventListener("mousemove", this.boundHandleMouseMove);
     this.domElement.removeEventListener("mousedown", this.boundHandleMouseDown);
-    this.domElement.removeEventListener("mouseup", this.boundHandleMouseUp);
     this.domElement.removeEventListener("contextmenu", this.boundHandleContextMenu);
     window.removeEventListener("keydown", this.boundHandleKeyDown);
 
@@ -159,7 +155,7 @@ export class LineMeasurementTool {
 
   clearAll(): void {
     const ids = Array.from(this.completedLines.keys());
-    ids.forEach((id) => {
+    ids.forEach(id => {
       const line = this.completedLines.get(id);
       if (line) {
         this.measureGroup.remove(line.line);
@@ -180,7 +176,7 @@ export class LineMeasurementTool {
   }
 
   getLines(): LineMeasurementData[] {
-    return Array.from(this.completedLines.values()).map((l) => l.data);
+    return Array.from(this.completedLines.values()).map(l => l.data);
   }
 
   dispose(): void {
@@ -191,7 +187,7 @@ export class LineMeasurementTool {
 
   private updateCachedMeshes(): void {
     const meshes: THREE.Mesh[] = [];
-    this.scene.traverse((obj) => {
+    this.scene.traverse(obj => {
       if (obj instanceof THREE.Mesh && obj.visible && obj !== this.previewStartMarker) {
         let isMeasureObj = false;
         let parent = obj.parent;
@@ -230,17 +226,21 @@ export class LineMeasurementTool {
     return hit ? target : null;
   }
 
+  suppressNextClick(): void {
+    this.pointerMoved = true;
+  }
+
   private handleMouseDown(event: MouseEvent): void {
     this.mouseDownPos.x = event.clientX;
     this.mouseDownPos.y = event.clientY;
-    this.isDragging = false;
-  }
-
-  private handleMouseUp(): void {
-    this.isDragging = false;
+    this.pointerMoved = false;
   }
 
   private handleClick(event: MouseEvent): void {
+    const moved = this.pointerMoved;
+    this.pointerMoved = false;
+    if (moved) return;
+
     const dx = event.clientX - this.mouseDownPos.x;
     const dy = event.clientY - this.mouseDownPos.y;
     if (Math.sqrt(dx * dx + dy * dy) > this.DRAG_THRESHOLD) return;
@@ -257,16 +257,16 @@ export class LineMeasurementTool {
   }
 
   private handleMouseMove(event: MouseEvent): void {
-    if (!this.currentStart) return;
-
     if (event.buttons !== 0) {
       const dx = event.clientX - this.mouseDownPos.x;
       const dy = event.clientY - this.mouseDownPos.y;
       if (Math.sqrt(dx * dx + dy * dy) > this.DRAG_THRESHOLD) {
-        this.isDragging = true;
+        this.pointerMoved = true;
         return;
       }
     }
+
+    if (!this.currentStart) return;
 
     const point = this.getPoint(event);
     if (!point) return;
@@ -296,7 +296,7 @@ export class LineMeasurementTool {
       color: this.MARKER_COLOR,
       depthTest: false,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.8
     });
     this.previewStartMarker = new THREE.Mesh(geo, mat);
     this.previewStartMarker.position.copy(point);
@@ -332,7 +332,7 @@ export class LineMeasurementTool {
         linewidth: 2,
         depthTest: false,
         transparent: true,
-        opacity: 0.7,
+        opacity: 0.7
       });
 
       this.previewLine = new THREE.Line(geometry, material);
@@ -383,19 +383,16 @@ export class LineMeasurementTool {
       start: this.currentStart.clone(),
       end: endPoint.clone(),
       distance,
-      label: `${distance.toFixed(2)} mm`,
+      label: `${distance.toFixed(2)} mm`
     };
 
-    const lineGeo = new THREE.BufferGeometry().setFromPoints([
-      this.currentStart.clone(),
-      endPoint.clone(),
-    ]);
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([this.currentStart.clone(), endPoint.clone()]);
     const lineMat = new THREE.LineBasicMaterial({
       color: this.LINE_COLOR,
       linewidth: 2,
       depthTest: false,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.9
     });
     const line = new THREE.Line(lineGeo, lineMat);
     line.renderOrder = 998;
@@ -406,7 +403,7 @@ export class LineMeasurementTool {
       color: this.MARKER_COLOR,
       depthTest: false,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.85
     });
     const startMarker = new THREE.Mesh(startGeo, markerMat);
     startMarker.position.copy(this.currentStart);
@@ -418,7 +415,7 @@ export class LineMeasurementTool {
       color: this.MARKER_COLOR,
       depthTest: false,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.85
     });
     const endMarker = new THREE.Mesh(endGeo, endMarkerMat);
     endMarker.position.copy(endPoint);
@@ -447,7 +444,7 @@ export class LineMeasurementTool {
       line,
       startMarker,
       endMarker,
-      label,
+      label
     });
 
     this.cleanupPreview();

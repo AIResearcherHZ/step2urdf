@@ -17,6 +17,7 @@
       :autosave-hint="autosaveHint"
       :has-robot-structure="hasRobotStructure"
       @import-robot="robotImportVisible = true"
+      @import-robot-package="robotPackageVisible = true"
       @open-projects="handleOpenProjects"
       @save-project="handleSaveProject"
       @upload="handleFileUpload"
@@ -117,6 +118,12 @@
       @imported="handleRobotImported"
     />
 
+    <RobotPackageDialog
+      :visible="robotPackageVisible"
+      @close="robotPackageVisible = false"
+      @loaded="handleRobotPackageLoaded"
+    />
+
     <JointWizard
       ref="jointWizardRef"
       @created="urdfScene.handleJointCreated"
@@ -177,6 +184,7 @@ import URDFRightPanel from "./URDFBuilder/URDFRightPanel.vue";
 import FloatingJointControl from "./URDFBuilder/FloatingJointControl.vue";
 import JointWizard from "./URDFBuilder/JointWizard.vue";
 import RobotImportDialog from "./URDFBuilder/RobotImportDialog.vue";
+import RobotPackageDialog from "./URDFBuilder/RobotPackageDialog.vue";
 import ProjectManager from "./ProjectManager.vue";
 import { useProjectPersistence } from "../persistence/useProjectPersistence";
 import { estimateStorage } from "../persistence/opfs";
@@ -211,6 +219,7 @@ import type {
   CameraConfig,
   ModelUploadOptions,
   MeshImportSettings,
+  RobotPackagePayload,
 } from "../types";
 import { FeatureType, ViewPreset } from "../types";
 
@@ -268,6 +277,7 @@ const urdfScene = useURDFScene({
 
 const projectManagerVisible = ref(false);
 const robotImportVisible = ref(false);
+const robotPackageVisible = ref(false);
 const storageText = ref("");
 
 let currentTree: SerializedTreeNode | null = null;
@@ -338,6 +348,46 @@ function handleRobotImported(): void {
   urdfScene.updateFKAndFrames();
   urdfStore.showFrames = true;
   nextTick(() => urdfLeftPanelRef.value?.setCurrentNodeById(""));
+}
+
+async function handleRobotPackageLoaded(payload: RobotPackagePayload): Promise<void> {
+  urdfStore.clearAll();
+  store.solidVisibilityMap = new Map();
+  store.setFileName(payload.fileName);
+
+  geometryEdit.rebuild(payload.solids, {
+    fitView: true,
+    tree: payload.tree,
+    treeName: payload.fileName,
+  });
+
+  urdfStore.importRobot(payload.robot);
+  const bindResult = urdfStore.bindSolidsByLinkNames(
+    payload.linkSolidNames,
+    store.solids.map((s) => ({ id: s.id, name: s.name })),
+  );
+
+  handleRobotImported();
+
+  await nextTick();
+  if (sceneManager && canvasContainerRef.value) {
+    const { clientWidth, clientHeight } = canvasContainerRef.value;
+    if (clientWidth > 0 && clientHeight > 0) sceneManager.updateSize(clientWidth, clientHeight);
+    sceneManager.fitToModel();
+  }
+
+  modelTreeVisible.value = true;
+
+  ElMessage.success(
+    `机器人包加载成功：${payload.robot.links.length} 连杆 / ${payload.robot.joints.length} 关节，` +
+      `${payload.solids.length} 个网格实体（${payload.triangles} 三角面），已绑定 ${bindResult.bound} 个`,
+  );
+
+  if (payload.warnings.length > 0) {
+    ElMessage.warning(
+      `有 ${payload.warnings.length} 条提示：${payload.warnings.slice(0, 2).join("；")}`,
+    );
+  }
 }
 
 async function handleSplitSolid(solidId: string): Promise<void> {
@@ -959,6 +1009,8 @@ function disposeViewer(): void {
 function handleViewHelperClick(event: PointerEvent): void {
   if (sceneManager?.handleViewHelperClick(event)) {
     event.stopPropagation();
+    selectionManager?.suppressNextClick();
+    lineMeasurementTool?.suppressNextClick();
   }
 }
 
