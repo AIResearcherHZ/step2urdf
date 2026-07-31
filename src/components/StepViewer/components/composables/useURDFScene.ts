@@ -1,538 +1,557 @@
-import * as THREE from 'three'
-import { ElMessage } from 'element-plus'
-import { FrameVisualizer } from '../../core/FrameVisualizer'
-import { ForwardKinematics } from '../../core/ForwardKinematics'
-import { JointSnapVisualizer } from '../../core/JointSnapVisualizer'
-import { CollisionVisualizer } from '../../core/CollisionVisualizer'
-import { computeRelativeTransform } from '../../core/useKinematicsWorker'
-import { exportURDFInWorker, disposeExportWorker } from '../../core/useExportWorker'
-import { serializeURDF } from '../../core/URDFSerializer'
-import { serializeMJCF } from '../../core/MJCFSerializer'
-import { distributeInertia, type LinkInertiaInput } from '../../core/InertiaDistribution'
-import { useStepViewerStore } from '../../stores/useStepViewerStore'
-import { useURDFStore } from '../../stores/useURDFStore'
-import type { SceneManager, SelectionManager } from '../../core'
-import type { FrameAxis } from '../../core/AxisFrame'
-import type { AxisCandidate } from '../../core/AxisCandidate'
-import { FeatureType } from '../../types'
-import type { GeometryFeature, SnapData } from '../../types'
+import * as THREE from "three";
+import { ElMessage } from "element-plus";
+import { FrameVisualizer } from "../../core/FrameVisualizer";
+import { ForwardKinematics } from "../../core/ForwardKinematics";
+import { JointSnapVisualizer } from "../../core/JointSnapVisualizer";
+import { CollisionVisualizer } from "../../core/CollisionVisualizer";
+import { computeRelativeTransform } from "../../core/useKinematicsWorker";
+import { exportURDFInWorker, disposeExportWorker } from "../../core/useExportWorker";
+import { serializeURDF } from "../../core/URDFSerializer";
+import { serializeMJCF } from "../../core/MJCFSerializer";
+import { distributeInertia, type LinkInertiaInput } from "../../core/InertiaDistribution";
+import { useStepViewerStore } from "../../stores/useStepViewerStore";
+import { useURDFStore } from "../../stores/useURDFStore";
+import type { SceneManager, SelectionManager } from "../../core";
+import type { FrameAxis } from "../../core/AxisFrame";
+import type { AxisCandidate } from "../../core/AxisCandidate";
+import { FeatureType } from "../../types";
+import type { GeometryFeature, SnapData } from "../../types";
 
 interface UseURDFSceneDeps {
-  getSceneManager: () => SceneManager | null
-  getSelectionManager: () => SelectionManager | null
+  getSceneManager: () => SceneManager | null;
+  getSelectionManager: () => SelectionManager | null;
 }
 
 export function useURDFScene(deps: UseURDFSceneDeps) {
-  const store = useStepViewerStore()
-  const urdfStore = useURDFStore()
+  const store = useStepViewerStore();
+  const urdfStore = useURDFStore();
 
-  let frameVisualizer: FrameVisualizer | null = null
-  let forwardKinematics: ForwardKinematics | null = null
-  let snapVisualizer: JointSnapVisualizer | null = null
-  let collisionVisualizer: CollisionVisualizer | null = null
-  let baseAxisLength = 0.05
-  let edgePickMode = false
-  let currentSnapData: SnapData | null = null
-  let modelDiagonal = 1
-  let xrayActive = false
-  let savedOpacity = 1
-  const XRAY_OPACITY = 0.15
-  let appliedGizmo: { position: [number, number, number]; direction: [number, number, number] } | null = null
+  let frameVisualizer: FrameVisualizer | null = null;
+  let forwardKinematics: ForwardKinematics | null = null;
+  let snapVisualizer: JointSnapVisualizer | null = null;
+  let collisionVisualizer: CollisionVisualizer | null = null;
+  let baseAxisLength = 0.05;
+  let edgePickMode = false;
+  let currentSnapData: SnapData | null = null;
+  let modelDiagonal = 1;
+  let xrayActive = false;
+  let savedOpacity = 1;
+  const XRAY_OPACITY = 0.15;
+  let appliedGizmo: {
+    position: [number, number, number];
+    direction: [number, number, number];
+  } | null = null;
 
-  function getFK(): ForwardKinematics | null { return forwardKinematics }
-  function isEdgePickMode(): boolean { return edgePickMode }
-  function getSnapData(): SnapData | null { return currentSnapData }
-  function getBaseAxisLength(): number { return baseAxisLength }
+  function getFK(): ForwardKinematics | null {
+    return forwardKinematics;
+  }
+  function isEdgePickMode(): boolean {
+    return edgePickMode;
+  }
+  function getSnapData(): SnapData | null {
+    return currentSnapData;
+  }
+  function getBaseAxisLength(): number {
+    return baseAxisLength;
+  }
 
   function initModules(): void {
-    const sm = deps.getSceneManager()
-    if (!sm) return
+    const sm = deps.getSceneManager();
+    if (!sm) return;
 
-    const box = new THREE.Box3().setFromObject(sm.modelGroup)
-    const size = box.getSize(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z)
-    modelDiagonal = size.length() || maxDim || 1
-    baseAxisLength = maxDim > 0 ? maxDim * 0.05 : 0.05
-    const axisLength = baseAxisLength * urdfStore.axisHelperScale
+    const box = new THREE.Box3().setFromObject(sm.modelGroup);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    modelDiagonal = size.length() || maxDim || 1;
+    baseAxisLength = maxDim > 0 ? maxDim * 0.05 : 0.05;
+    const axisLength = baseAxisLength * urdfStore.axisHelperScale;
 
-    frameVisualizer?.dispose()
-    frameVisualizer = new FrameVisualizer({ scene: sm.scene, axisLength })
+    frameVisualizer?.dispose();
+    frameVisualizer = new FrameVisualizer({ scene: sm.scene, axisLength });
 
     if (!forwardKinematics) {
-      forwardKinematics = new ForwardKinematics()
+      forwardKinematics = new ForwardKinematics();
     }
 
-    snapVisualizer?.dispose()
-    snapVisualizer = new JointSnapVisualizer({ scene: sm.scene, axisLength })
+    snapVisualizer?.dispose();
+    snapVisualizer = new JointSnapVisualizer({ scene: sm.scene, axisLength });
 
-    collisionVisualizer?.dispose()
-    collisionVisualizer = new CollisionVisualizer({ scene: sm.scene })
-    collisionVisualizer.setVisible(urdfStore.collisionConfig.visible)
+    collisionVisualizer?.dispose();
+    collisionVisualizer = new CollisionVisualizer({ scene: sm.scene });
+    collisionVisualizer.setVisible(urdfStore.collisionConfig.visible);
 
-    forwardKinematics.setRobot(urdfStore.robot)
-    frameVisualizer.setVisible(urdfStore.showFrames)
-    updateFKAndFrames()
+    forwardKinematics.setRobot(urdfStore.robot);
+    frameVisualizer.setVisible(urdfStore.showFrames);
+    updateFKAndFrames();
   }
 
   function updateFKAndFrames(): void {
-    const sm = deps.getSceneManager()
-    if (!forwardKinematics || !sm) return
+    const sm = deps.getSceneManager();
+    if (!forwardKinematics || !sm) return;
 
-    forwardKinematics.setRobot(urdfStore.robot)
-    const transforms = forwardKinematics.compute()
+    forwardKinematics.setRobot(urdfStore.robot);
+    const transforms = forwardKinematics.compute();
 
-    urdfStore.linkWorldTransforms = transforms
-    forwardKinematics.applyToScene(transforms, urdfStore.robot.links, store.solidMap)
+    urdfStore.linkWorldTransforms = transforms;
+    forwardKinematics.applyToScene(transforms, urdfStore.robot.links, store.solidMap);
 
     if (frameVisualizer && urdfStore.showFrames) {
-      frameVisualizer.showAllFrames(urdfStore.robot.joints)
+      frameVisualizer.showAllFrames(urdfStore.robot.joints);
       for (const joint of urdfStore.robot.joints) {
-        const wm = forwardKinematics.getJointWorldMatrix(joint.id)
-        if (wm) frameVisualizer.updateFrameTransform(joint.id, wm)
+        const wm = forwardKinematics.getJointWorldMatrix(joint.id);
+        if (wm) frameVisualizer.updateFrameTransform(joint.id, wm);
       }
-      frameVisualizer.showBaseFrame(urdfStore.baseLinkOrigin, urdfStore.baseLinkRPY ?? undefined)
+      frameVisualizer.showBaseFrame(urdfStore.baseLinkOrigin, urdfStore.baseLinkRPY ?? undefined);
     }
 
     if (collisionVisualizer && urdfStore.collisionShapes.length > 0) {
-      collisionVisualizer.updateTransforms(urdfStore.collisionShapes, buildLinkDeltas(transforms))
+      collisionVisualizer.updateTransforms(urdfStore.collisionShapes, buildLinkDeltas(transforms));
     }
 
-    sm.markDirty()
+    sm.markDirty();
   }
 
   function buildLinkDeltas(transforms: Map<string, THREE.Matrix4>): Map<string, THREE.Matrix4> {
-    const deltas = new Map<string, THREE.Matrix4>()
-    if (!forwardKinematics) return deltas
+    const deltas = new Map<string, THREE.Matrix4>();
+    if (!forwardKinematics) return deltas;
     for (const [linkId, world] of transforms) {
-      const rest = forwardKinematics.getLinkRestTransform(linkId)
-      if (!rest) continue
-      deltas.set(linkId, new THREE.Matrix4().multiplyMatrices(world, rest.invert()))
+      const rest = forwardKinematics.getLinkRestTransform(linkId);
+      if (!rest) continue;
+      deltas.set(linkId, new THREE.Matrix4().multiplyMatrices(world, rest.invert()));
     }
-    return deltas
+    return deltas;
   }
 
   function refreshCollisionVisual(): void {
-    if (!collisionVisualizer) return
-    collisionVisualizer.setShapes(urdfStore.collisionShapes)
-    collisionVisualizer.setVisible(urdfStore.collisionConfig.visible)
+    if (!collisionVisualizer) return;
+    collisionVisualizer.setShapes(urdfStore.collisionShapes);
+    collisionVisualizer.setVisible(urdfStore.collisionConfig.visible);
     if (forwardKinematics) {
       collisionVisualizer.updateTransforms(
         urdfStore.collisionShapes,
-        buildLinkDeltas(urdfStore.linkWorldTransforms)
-      )
+        buildLinkDeltas(urdfStore.linkWorldTransforms),
+      );
     }
-    deps.getSceneManager()?.markDirty()
+    deps.getSceneManager()?.markDirty();
   }
 
   function setCollisionVisible(visible: boolean): void {
-    collisionVisualizer?.setVisible(visible)
-    deps.getSceneManager()?.markDirty()
+    collisionVisualizer?.setVisible(visible);
+    deps.getSceneManager()?.markDirty();
   }
 
   async function fillMissingLinkInertials(): Promise<number> {
     const missing = new Set(
-      urdfStore.robot.links
-        .filter(l => !l.inertial && l.solidIds.length > 0)
-        .map(l => l.id)
-    )
-    if (missing.size === 0) return 0
+      urdfStore.robot.links.filter((l) => !l.inertial && l.solidIds.length > 0).map((l) => l.id),
+    );
+    if (missing.size === 0) return 0;
 
-    const inputs: LinkInertiaInput[] = []
+    const inputs: LinkInertiaInput[] = [];
     for (const link of urdfStore.robot.links) {
-      if (link.solidIds.length === 0) continue
-      const pairs: LinkInertiaInput['pairs'] = []
+      if (link.solidIds.length === 0) continue;
+      const pairs: LinkInertiaInput["pairs"] = [];
       for (const solidId of link.solidIds) {
-        const solid = store.solidMap.get(solidId)
+        const solid = store.solidMap.get(solidId);
         if (solid?.serializedData) {
-          pairs.push({ solidId, solidName: solid.name, data: solid.serializedData })
+          pairs.push({ solidId, solidName: solid.name, data: solid.serializedData });
         }
       }
-      if (pairs.length > 0) inputs.push({ linkId: link.id, name: link.name, pairs })
+      if (pairs.length > 0) inputs.push({ linkId: link.id, name: link.name, pairs });
     }
-    if (inputs.length === 0) return 0
+    if (inputs.length === 0) return 0;
 
-    const results = await distributeInertia(inputs, urdfStore.totalMass)
-    let filled = 0
+    const results = await distributeInertia(inputs, urdfStore.totalMass);
+    let filled = 0;
     for (const row of results) {
-      if (!missing.has(row.linkId) || row.mass <= 0) continue
+      if (!missing.has(row.linkId) || row.mass <= 0) continue;
       urdfStore.setLinkInertial(row.linkId, {
         mass: row.mass,
         com: row.com,
-        inertia: row.inertia
-      })
+        inertia: row.inertia,
+      });
       urdfStore.setLinkSolidMasses(
         row.linkId,
-        Object.fromEntries(row.solids.map(s => [s.solidId, s.mass]))
-      )
-      filled++
+        Object.fromEntries(row.solids.map((s) => [s.solidId, s.mass])),
+      );
+      filled++;
     }
-    return filled
+    return filled;
   }
 
   function disposeModules(): void {
-    frameVisualizer?.dispose()
-    frameVisualizer = null
-    snapVisualizer?.dispose()
-    snapVisualizer = null
-    collisionVisualizer?.dispose()
-    collisionVisualizer = null
-    forwardKinematics = null
-    currentSnapData = null
-    appliedGizmo = null
-    edgePickMode = false
-    disposeExportWorker()
+    frameVisualizer?.dispose();
+    frameVisualizer = null;
+    snapVisualizer?.dispose();
+    snapVisualizer = null;
+    collisionVisualizer?.dispose();
+    collisionVisualizer = null;
+    forwardKinematics = null;
+    currentSnapData = null;
+    appliedGizmo = null;
+    edgePickMode = false;
+    disposeExportWorker();
   }
 
   function setFrameVisible(visible: boolean): void {
-    frameVisualizer?.setVisible(visible)
+    frameVisualizer?.setVisible(visible);
   }
 
   function setAxisLength(scale: number): void {
     if (frameVisualizer) {
-      frameVisualizer.setAxisLength(baseAxisLength * scale)
-      deps.getSceneManager()?.markDirty()
+      frameVisualizer.setAxisLength(baseAxisLength * scale);
+      deps.getSceneManager()?.markDirty();
     }
   }
 
   function handleHoverSnap(feature: GeometryFeature | null): void {
-    const sm = deps.getSceneManager()
+    const sm = deps.getSceneManager();
     if (!edgePickMode || !snapVisualizer) {
-      snapVisualizer?.hide()
-      currentSnapData = null
-      return
+      snapVisualizer?.hide();
+      currentSnapData = null;
+      return;
     }
 
     if (!feature) {
-      restoreAppliedGizmo()
-      currentSnapData = null
-      sm?.markDirty()
-      return
+      restoreAppliedGizmo();
+      currentSnapData = null;
+      sm?.markDirty();
+      return;
     }
 
-    const resolved = resolveSnapFromFeature(feature)
+    const resolved = resolveSnapFromFeature(feature);
     if (!resolved) {
-      restoreAppliedGizmo()
-      currentSnapData = null
-      sm?.markDirty()
-      return
+      restoreAppliedGizmo();
+      currentSnapData = null;
+      sm?.markDirty();
+      return;
     }
 
-    snapVisualizer.updateSnap(resolved.position, resolved.direction)
-    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
+    snapVisualizer.updateSnap(resolved.position, resolved.direction);
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6);
     currentSnapData = {
       position: [resolved.position.x, resolved.position.y, resolved.position.z],
       normal: [resolved.direction.x, resolved.direction.y, resolved.direction.z],
       featureType: resolved.featureType,
-      frame: snapVisualizer.getCurrentFrame()
-    }
-    sm?.markDirty()
+      frame: snapVisualizer.getCurrentFrame(),
+    };
+    sm?.markDirty();
   }
 
   function resolveSnapFromFeature(feature: GeometryFeature): {
-    position: THREE.Vector3
-    direction: THREE.Vector3
-    featureType: 'circle' | 'arc' | 'line'
+    position: THREE.Vector3;
+    direction: THREE.Vector3;
+    featureType: "circle" | "arc" | "line";
   } | null {
-    const curve = feature.edgeCurveType
+    const curve = feature.edgeCurveType;
 
-    if (curve === 'line') {
-      if (!feature.startPoint || !feature.endPoint) return null
+    if (curve === "line") {
+      if (!feature.startPoint || !feature.endPoint) return null;
       return {
         position: feature.startPoint.clone(),
         direction: feature.endPoint.clone().sub(feature.startPoint).normalize(),
-        featureType: 'line'
-      }
+        featureType: "line",
+      };
     }
 
-    if (curve === 'circle' || curve === 'arc') {
-      const axis = feature.axis || feature.normal
-      if (!feature.center || !axis) return null
+    if (curve === "circle" || curve === "arc") {
+      const axis = feature.axis || feature.normal;
+      if (!feature.center || !axis) return null;
       return {
         position: feature.center.clone(),
         direction: axis.clone().normalize(),
-        featureType: curve
-      }
+        featureType: curve,
+      };
     }
 
     if (
-      feature.type === FeatureType.CYLINDER
-      || feature.type === FeatureType.CONE
-      || feature.type === FeatureType.ARC
-      || feature.type === FeatureType.TORUS
+      feature.type === FeatureType.CYLINDER ||
+      feature.type === FeatureType.CONE ||
+      feature.type === FeatureType.ARC ||
+      feature.type === FeatureType.TORUS
     ) {
-      const axis = feature.axis || feature.normal
-      if (!feature.center || !axis) return null
+      const axis = feature.axis || feature.normal;
+      if (!feature.center || !axis) return null;
       return {
         position: feature.center.clone(),
         direction: axis.clone().normalize(),
-        featureType: 'circle'
-      }
+        featureType: "circle",
+      };
     }
 
-    return null
+    return null;
   }
 
   function restoreAppliedGizmo(): void {
-    if (!snapVisualizer) return
+    if (!snapVisualizer) return;
     if (!appliedGizmo) {
-      snapVisualizer.hide()
-      return
+      snapVisualizer.hide();
+      return;
     }
     snapVisualizer.updateSnap(
       new THREE.Vector3(...appliedGizmo.position),
-      new THREE.Vector3(...appliedGizmo.direction)
-    )
-    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
+      new THREE.Vector3(...appliedGizmo.direction),
+    );
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6);
   }
 
   function previewAxisCandidate(candidate: AxisCandidate | null, t?: number): void {
-    const sm = deps.getSceneManager()
-    if (!snapVisualizer) return
+    const sm = deps.getSceneManager();
+    if (!snapVisualizer) return;
 
     if (!candidate) {
-      restoreAppliedGizmo()
-      sm?.markDirty()
-      return
+      restoreAppliedGizmo();
+      sm?.markDirty();
+      return;
     }
 
-    const offset = t ?? candidate.originT
+    const offset = t ?? candidate.originT;
     const pos = new THREE.Vector3(
       candidate.basePoint[0] + candidate.dir[0] * offset,
       candidate.basePoint[1] + candidate.dir[1] * offset,
-      candidate.basePoint[2] + candidate.dir[2] * offset
-    )
-    const dir = new THREE.Vector3(candidate.dir[0], candidate.dir[1], candidate.dir[2])
+      candidate.basePoint[2] + candidate.dir[2] * offset,
+    );
+    const dir = new THREE.Vector3(candidate.dir[0], candidate.dir[1], candidate.dir[2]);
 
-    snapVisualizer.updateSnap(pos, dir)
-    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
-    sm?.markDirty()
+    snapVisualizer.updateSnap(pos, dir);
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6);
+    sm?.markDirty();
   }
 
   function showAxisGizmo(
     position: [number, number, number],
-    direction: [number, number, number]
+    direction: [number, number, number],
   ): void {
-    if (!snapVisualizer) return
-    appliedGizmo = { position: [...position], direction: [...direction] }
+    if (!snapVisualizer) return;
+    appliedGizmo = { position: [...position], direction: [...direction] };
     snapVisualizer.updateSnap(
       new THREE.Vector3(position[0], position[1], position[2]),
-      new THREE.Vector3(direction[0], direction[1], direction[2])
-    )
-    snapVisualizer.showAxisLine(modelDiagonal * 0.6)
-    deps.getSceneManager()?.markDirty()
+      new THREE.Vector3(direction[0], direction[1], direction[2]),
+    );
+    snapVisualizer.showAxisLine(modelDiagonal * 0.6);
+    deps.getSceneManager()?.markDirty();
   }
 
   function hideAxisGizmo(): void {
-    appliedGizmo = null
-    snapVisualizer?.hide()
-    deps.getSceneManager()?.markDirty()
+    appliedGizmo = null;
+    snapVisualizer?.hide();
+    deps.getSceneManager()?.markDirty();
   }
 
   function cycleAxisCandidate(step = 1): void {
-    if (!edgePickMode) return
-    deps.getSelectionManager()?.cycleAxisCandidate(step)
+    if (!edgePickMode) return;
+    deps.getSelectionManager()?.cycleAxisCandidate(step);
   }
 
   function setXray(active: boolean): void {
-    const sm = deps.getSelectionManager()
+    const sm = deps.getSelectionManager();
 
     if (active) {
-      if (!xrayActive) savedOpacity = store.globalOpacity
-      xrayActive = true
-      const target = Math.min(savedOpacity, XRAY_OPACITY)
-      store.setGlobalOpacity(target)
-      store.setTransparent(target < 1)
-      sm?.setOpacity(null, target)
+      if (!xrayActive) savedOpacity = store.globalOpacity;
+      xrayActive = true;
+      const target = Math.min(savedOpacity, XRAY_OPACITY);
+      store.setGlobalOpacity(target);
+      store.setTransparent(target < 1);
+      sm?.setOpacity(null, target);
     } else {
-      if (!xrayActive) return
-      xrayActive = false
-      store.setGlobalOpacity(savedOpacity)
-      store.setTransparent(savedOpacity < 1)
-      sm?.setOpacity(null, savedOpacity)
+      if (!xrayActive) return;
+      xrayActive = false;
+      store.setGlobalOpacity(savedOpacity);
+      store.setTransparent(savedOpacity < 1);
+      sm?.setOpacity(null, savedOpacity);
     }
 
-    deps.getSceneManager()?.markDirty()
+    deps.getSceneManager()?.markDirty();
   }
 
   function syncOpacityBaseline(opacity: number): void {
-    if (!xrayActive) return
-    savedOpacity = opacity
+    if (!xrayActive) return;
+    savedOpacity = opacity;
   }
 
   function isXrayActive(): boolean {
-    return xrayActive
+    return xrayActive;
   }
 
   function flipAxis(axis: FrameAxis): void {
-    if (!snapVisualizer?.isVisible()) return
-    snapVisualizer.flipAxis(axis)
+    if (!snapVisualizer?.isVisible()) return;
+    snapVisualizer.flipAxis(axis);
     if (currentSnapData) {
-      const f = snapVisualizer.getCurrentFrame()
-      currentSnapData.normal = [...f.z] as [number, number, number]
-      currentSnapData.frame = f
+      const f = snapVisualizer.getCurrentFrame();
+      currentSnapData.normal = [...f.z] as [number, number, number];
+      currentSnapData.frame = f;
     }
-    deps.getSceneManager()?.markDirty()
+    deps.getSceneManager()?.markDirty();
   }
 
   function handleBindingClick(feature: GeometryFeature): void {
-    if (!urdfStore.bindingMode.active || !urdfStore.bindingMode.targetLinkId) return
-    if (!feature.solidId) return
+    if (!urdfStore.bindingMode.active || !urdfStore.bindingMode.targetLinkId) return;
+    if (!feature.solidId) return;
 
     if (urdfStore.boundSolidIds.has(feature.solidId)) {
-      ElMessage.warning('该 Solid 已被其他 Link 绑定')
-      return
+      ElMessage.warning("该 Solid 已被其他 Link 绑定");
+      return;
     }
 
-    urdfStore.bindSolid(urdfStore.bindingMode.targetLinkId, feature.solidId)
+    urdfStore.bindSolid(urdfStore.bindingMode.targetLinkId, feature.solidId);
   }
 
   function startEdgePickMode(): void {
-    edgePickMode = true
-    deps.getSelectionManager()?.setGranularityMode('edge')
+    edgePickMode = true;
+    deps.getSelectionManager()?.setGranularityMode("edge");
   }
 
   function stopEdgePickMode(): void {
-    edgePickMode = false
-    urdfStore.edgePickEditJointId = null
-    appliedGizmo = null
-    snapVisualizer?.hide()
-    currentSnapData = null
-    if (xrayActive) setXray(false)
-    deps.getSelectionManager()?.setGranularityMode('solid')
-    deps.getSceneManager()?.markDirty()
+    edgePickMode = false;
+    urdfStore.edgePickEditJointId = null;
+    appliedGizmo = null;
+    snapVisualizer?.hide();
+    currentSnapData = null;
+    if (xrayActive) setXray(false);
+    deps.getSelectionManager()?.setGranularityMode("solid");
+    deps.getSceneManager()?.markDirty();
   }
 
-  async function applyPickedEdgeToExistingJoint(jointId: string, feature: GeometryFeature): Promise<void> {
-    const joint = urdfStore.jointMap.get(jointId)
-    if (!joint) return
+  async function applyPickedEdgeToExistingJoint(
+    jointId: string,
+    feature: GeometryFeature,
+  ): Promise<void> {
+    const joint = urdfStore.jointMap.get(jointId);
+    if (!joint) return;
 
-    let snapPos: [number, number, number]
-    let snapNorm: [number, number, number]
+    let snapPos: [number, number, number];
+    let snapNorm: [number, number, number];
 
-    if (feature.edgeCurveType === 'line') {
-      if (!feature.startPoint || !feature.endPoint) return
-      const dir = feature.endPoint.clone().sub(feature.startPoint).normalize()
-      snapPos = [feature.startPoint.x, feature.startPoint.y, feature.startPoint.z]
-      snapNorm = [dir.x, dir.y, dir.z]
+    if (feature.edgeCurveType === "line") {
+      if (!feature.startPoint || !feature.endPoint) return;
+      const dir = feature.endPoint.clone().sub(feature.startPoint).normalize();
+      snapPos = [feature.startPoint.x, feature.startPoint.y, feature.startPoint.z];
+      snapNorm = [dir.x, dir.y, dir.z];
     } else {
-      if (!feature.center || (!feature.axis && !feature.normal)) return
-      const norm = (feature.axis || feature.normal)!
-      snapPos = [feature.center.x, feature.center.y, feature.center.z]
-      snapNorm = [norm.x, norm.y, norm.z]
+      if (!feature.center || (!feature.axis && !feature.normal)) return;
+      const norm = (feature.axis || feature.normal)!;
+      snapPos = [feature.center.x, feature.center.y, feature.center.z];
+      snapNorm = [norm.x, norm.y, norm.z];
     }
 
-    const parentWorld = urdfStore.linkWorldTransforms.get(joint.parentLinkId)
-    const parentElements = parentWorld ? parentWorld.elements : new THREE.Matrix4().elements
+    const parentWorld = urdfStore.linkWorldTransforms.get(joint.parentLinkId);
+    const parentElements = parentWorld ? parentWorld.elements : new THREE.Matrix4().elements;
 
-    const result = await computeRelativeTransform(parentElements, snapPos, snapNorm)
+    const result = await computeRelativeTransform(parentElements, snapPos, snapNorm);
 
-    joint.origin.xyz = result.xyz
-    joint.origin.rpy = result.rpy
-    joint.axis = [0, 0, 1]
+    joint.origin.xyz = result.xyz;
+    joint.origin.rpy = result.rpy;
+    joint.axis = [0, 0, 1];
 
-    ElMessage.success('已更新关节参数')
+    ElMessage.success("已更新关节参数");
   }
 
   function handleJointCreated(): void {
-    urdfStore.showFrames = true
-    appliedGizmo = null
-    snapVisualizer?.hide()
-    currentSnapData = null
-    updateFKAndFrames()
+    urdfStore.showFrames = true;
+    appliedGizmo = null;
+    snapVisualizer?.hide();
+    currentSnapData = null;
+    updateFKAndFrames();
   }
 
   async function handleExportURDF(exportCompleteAdVisible: { value: boolean }): Promise<void> {
-
-    const orphans = urdfStore.findOrphanLinks()
+    const orphans = urdfStore.findOrphanLinks();
     if (orphans.length > 0) {
-      ElMessage.warning(`以下 Link 未被任何 Joint 连接: ${orphans.join(', ')}`)
+      ElMessage.warning(`以下 Link 未被任何 Joint 连接: ${orphans.join(", ")}`);
     }
 
-    urdfStore.exporting = true
-    urdfStore.exportProgress = '正在生成 URDF...'
+    urdfStore.exporting = true;
+    urdfStore.exportProgress = "正在生成 URDF...";
 
-    const savedValues = urdfStore.robot.joints.map(j => j.currentValue)
-    urdfStore.robot.joints.forEach(j => { j.currentValue = 0 })
+    const savedValues = urdfStore.robot.joints.map((j) => j.currentValue);
+    urdfStore.robot.joints.forEach((j) => {
+      j.currentValue = 0;
+    });
 
     try {
-      const autoFilled = await fillMissingLinkInertials()
+      const autoFilled = await fillMissingLinkInertials();
       if (autoFilled > 0) {
-        ElMessage.info(`${autoFilled} 个连杆未设置惯性参数，已按整机总质量 ${urdfStore.totalMass} kg 自动分配`)
+        ElMessage.info(
+          `${autoFilled} 个连杆未设置惯性参数，已按整机总质量 ${urdfStore.totalMass} kg 自动分配`,
+        );
       }
 
-      const fk = forwardKinematics ?? new ForwardKinematics()
-      fk.setRobot(urdfStore.robot)
+      const fk = forwardKinematics ?? new ForwardKinematics();
+      fk.setRobot(urdfStore.robot);
 
-      const linkRestInverses = new Map<string, THREE.Matrix4>()
+      const linkRestInverses = new Map<string, THREE.Matrix4>();
       for (const link of urdfStore.robot.links) {
-        const rest = fk.getLinkRestTransform(link.id)
-        if (rest) linkRestInverses.set(link.id, rest.clone().invert())
+        const rest = fk.getLinkRestTransform(link.id);
+        if (rest) linkRestInverses.set(link.id, rest.clone().invert());
       }
 
-      let basePoseInverseForExport: THREE.Matrix4 | undefined
-      const bOrigin = urdfStore.baseLinkOrigin
-      const bRPY = urdfStore.baseLinkRPY
+      let basePoseInverseForExport: THREE.Matrix4 | undefined;
+      const bOrigin = urdfStore.baseLinkOrigin;
+      const bRPY = urdfStore.baseLinkRPY;
       if (bOrigin || bRPY) {
-        const o = bOrigin ?? [0, 0, 0]
-        const r = bRPY ?? [0, 0, 0]
-        const T = new THREE.Matrix4().makeTranslation(o[0], o[1], o[2])
-        const R = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(r[0], r[1], r[2], 'ZYX'))
-        const basePoseMatrix = new THREE.Matrix4().multiplyMatrices(T, R)
-        basePoseInverseForExport = basePoseMatrix.clone().invert()
-        linkRestInverses.set(urdfStore.BASE_LINK_ID, basePoseInverseForExport)
+        const o = bOrigin ?? [0, 0, 0];
+        const r = bRPY ?? [0, 0, 0];
+        const T = new THREE.Matrix4().makeTranslation(o[0], o[1], o[2]);
+        const R = new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(r[0], r[1], r[2], "ZYX"),
+        );
+        const basePoseMatrix = new THREE.Matrix4().multiplyMatrices(T, R);
+        basePoseInverseForExport = basePoseMatrix.clone().invert();
+        linkRestInverses.set(urdfStore.BASE_LINK_ID, basePoseInverseForExport);
       }
 
-      const format = urdfStore.exportFormat
-      const useCollision = urdfStore.collisionConfig.useForExport && urdfStore.collisionShapes.length > 0
+      const format = urdfStore.exportFormat;
+      const useCollision =
+        urdfStore.collisionConfig.useForExport && urdfStore.collisionShapes.length > 0;
       const collisionShapeMap = useCollision
-        ? new Map(urdfStore.collisionShapes.map(s => [s.linkId, s]))
-        : undefined
+        ? new Map(urdfStore.collisionShapes.map((s) => [s.linkId, s]))
+        : undefined;
 
       const serializeOptions = {
         linkRestInverses,
         unitScale: 0.001,
         basePoseInverse: basePoseInverseForExport,
         baseLinkId: urdfStore.BASE_LINK_ID,
-        collisionShapes: collisionShapeMap
-      }
+        collisionShapes: collisionShapeMap,
+      };
 
-      const urdfXml = format === 'mjcf' ? '' : serializeURDF(urdfStore.robot, serializeOptions)
+      const urdfXml = format === "mjcf" ? "" : serializeURDF(urdfStore.robot, serializeOptions);
 
-      const linkSolidMap: Record<string, import('../../types').SerializedSolidData[]> = {}
-      const linkRestInverseMap: Record<string, number[]> = {}
+      const linkSolidMap: Record<string, import("../../types").SerializedSolidData[]> = {};
+      const linkRestInverseMap: Record<string, number[]> = {};
 
       for (const link of urdfStore.robot.links) {
-        if (link.solidIds.length === 0) continue
-        const solidDataList: import('../../types').SerializedSolidData[] = []
+        if (link.solidIds.length === 0) continue;
+        const solidDataList: import("../../types").SerializedSolidData[] = [];
         for (const solidId of link.solidIds) {
-          const solid = store.solidMap.get(solidId)
-          if (solid?.serializedData) solidDataList.push(solid.serializedData)
+          const solid = store.solidMap.get(solidId);
+          if (solid?.serializedData) solidDataList.push(solid.serializedData);
         }
         if (solidDataList.length > 0) {
-          linkSolidMap[link.name] = solidDataList
-          const inv = linkRestInverses.get(link.id)
-          if (inv) linkRestInverseMap[link.name] = Array.from(inv.elements)
+          linkSolidMap[link.name] = solidDataList;
+          const inv = linkRestInverses.get(link.id);
+          if (inv) linkRestInverseMap[link.name] = Array.from(inv.elements);
         }
       }
 
-      const extraFiles: Record<string, string> = {}
-      if (format !== 'urdf') {
-        extraFiles['robot.xml'] = serializeMJCF(urdfStore.robot, {
+      const extraFiles: Record<string, string> = {};
+      if (format !== "urdf") {
+        extraFiles["robot.xml"] = serializeMJCF(urdfStore.robot, {
           ...serializeOptions,
-          meshDir: 'meshes',
-          meshLinkNames: new Set(Object.keys(linkSolidMap))
-        })
+          meshDir: "meshes",
+          meshLinkNames: new Set(Object.keys(linkSolidMap)),
+        });
       }
 
-      const collisionMeshMap: Record<string, { positions: Float32Array; indices: Uint32Array }> = {}
+      const collisionMeshMap: Record<string, { positions: Float32Array; indices: Uint32Array }> =
+        {};
       if (collisionShapeMap) {
         for (const link of urdfStore.robot.links) {
-          const shape = collisionShapeMap.get(link.id)
-          if (shape?.type === 'convex' && shape.hull) {
+          const shape = collisionShapeMap.get(link.id);
+          if (shape?.type === "convex" && shape.hull) {
             collisionMeshMap[link.name] = {
               positions: shape.hull.positions,
-              indices: shape.hull.indices
-            }
+              indices: shape.hull.indices,
+            };
           }
         }
       }
@@ -542,29 +561,33 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         linkSolidMap,
         linkRestInverseMap,
         0.001,
-        (stage) => { urdfStore.exportProgress = stage },
+        (stage) => {
+          urdfStore.exportProgress = stage;
+        },
         extraFiles,
-        collisionMeshMap
-      )
+        collisionMeshMap,
+      );
 
-      const blob = new Blob([zipBuffer], { type: 'application/zip' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${urdfStore.robot.name}.zip`
-      a.click()
-      URL.revokeObjectURL(url)
+      const blob = new Blob([zipBuffer], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${urdfStore.robot.name}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
 
-      const label = format === 'urdf' ? 'URDF' : format === 'mjcf' ? 'MJCF' : 'URDF + MJCF'
-      ElMessage.success(`${label} 导出成功`)
-      exportCompleteAdVisible.value = true
+      const label = format === "urdf" ? "URDF" : format === "mjcf" ? "MJCF" : "URDF + MJCF";
+      ElMessage.success(`${label} 导出成功`);
+      exportCompleteAdVisible.value = true;
     } catch (err) {
-      ElMessage.error(`导出失败: ${(err as Error).message}`)
+      ElMessage.error(`导出失败: ${(err as Error).message}`);
     } finally {
-      urdfStore.robot.joints.forEach((j, i) => { j.currentValue = savedValues[i] })
-      updateFKAndFrames()
-      urdfStore.exporting = false
-      urdfStore.exportProgress = ''
+      urdfStore.robot.joints.forEach((j, i) => {
+        j.currentValue = savedValues[i];
+      });
+      updateFKAndFrames();
+      urdfStore.exporting = false;
+      urdfStore.exportProgress = "";
     }
   }
 
@@ -595,5 +618,5 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     handleExportURDF,
     refreshCollisionVisual,
     setCollisionVisible,
-  }
+  };
 }

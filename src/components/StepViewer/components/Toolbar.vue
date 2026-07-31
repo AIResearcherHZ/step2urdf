@@ -1,33 +1,54 @@
 <template>
   <div class="step-viewer-toolbar">
-    <!-- 左侧：侧栏切换 + 文件上传 -->
     <div class="toolbar-left">
       <div class="toolbar-section">
-        <el-tooltip :content="occtReady ? '选择并导入 STEP / STP 模型文件' : '正在加载 OpenCASCADE 引擎...'" placement="bottom">
+        <el-tooltip
+          :content="occtReady ? '选择并导入 STEP / STP 模型文件' : '正在加载 OpenCASCADE 引擎...'"
+          placement="bottom"
+        >
           <el-button
-type="primary" :loading="isLoading || !occtReady" :icon="UploadFilled"
-            :disabled="isLoading || !occtReady" @click="openUploadDialog">
-            {{ isLoading ? '加载中...' : (!occtReady ? '引擎加载中...' : '导入模型') }}
+            type="primary"
+            :loading="isLoading || !occtReady"
+            :icon="UploadFilled"
+            :disabled="isLoading || !occtReady"
+            @click="openUploadDialog"
+          >
+            {{ isLoading ? "加载中..." : !occtReady ? "引擎加载中..." : "导入模型" }}
           </el-button>
         </el-tooltip>
-        <!-- WASM 加载进度条 -->
         <div v-if="!occtReady" class="wasm-progress">
-          <el-progress :percentage="Math.round(occtLoadProgress ?? 0)" :stroke-width="14" :show-text="false" />
-          <span class="wasm-progress-text">OpenCASCADE WASM 加载中 ({{ Math.round(occtLoadProgress ?? 0) }}%)</span>
+          <el-progress
+            :percentage="Math.round(occtLoadProgress ?? 0)"
+            :stroke-width="14"
+            :show-text="false"
+          />
+          <span class="wasm-progress-text"
+            >OpenCASCADE WASM 加载中 ({{ Math.round(occtLoadProgress ?? 0) }}%)</span
+          >
         </div>
         <span v-if="fileName" class="file-name" :title="fileName">{{ fileName }}</span>
       </div>
 
-      <!-- 导入模型文件弹框 -->
       <el-dialog
-v-model="uploadDialogVisible" width="520px" :close-on-click-modal="false" :append-to-body="true"
-        class="step-upload-dialog" align-center title="导入模型文件">
-
+        v-model="uploadDialogVisible"
+        width="520px"
+        :close-on-click-modal="false"
+        :append-to-body="true"
+        class="step-upload-dialog"
+        align-center
+        title="导入模型文件"
+      >
         <div class="upload-dialog-body">
-          <!-- el-upload 拖拽区 -->
           <el-upload
-ref="elUploadRef" class="step-uploader" drag :auto-upload="false" :show-file-list="false"
-            :multiple="false" accept=".step,.stp" :on-change="handleElUploadChange">
+            ref="elUploadRef"
+            class="step-uploader"
+            drag
+            :auto-upload="false"
+            :show-file-list="false"
+            :multiple="false"
+            accept=".step,.stp"
+            :on-change="handleElUploadChange"
+          >
             <div class="upload-placeholder">
               <div class="uph-icon-wrap">
                 <el-icon class="uph-icon">
@@ -44,7 +65,6 @@ ref="elUploadRef" class="step-uploader" drag :auto-upload="false" :show-file-lis
             </div>
           </el-upload>
 
-          <!-- 已选文件预览卡片 -->
           <transition name="file-card-slide">
             <div v-if="pendingFile" class="selected-file-card">
               <div class="sfc-icon-block">
@@ -65,7 +85,14 @@ ref="elUploadRef" class="step-uploader" drag :auto-upload="false" :show-file-lis
                 </div>
               </div>
               <el-tooltip content="移除文件" placement="top">
-                <el-button class="sfc-remove" :icon="Close" circle plain size="small" @click.stop="removePendingFile" />
+                <el-button
+                  class="sfc-remove"
+                  :icon="Close"
+                  circle
+                  plain
+                  size="small"
+                  @click.stop="removePendingFile"
+                />
               </el-tooltip>
             </div>
           </transition>
@@ -73,16 +100,18 @@ ref="elUploadRef" class="step-uploader" drag :auto-upload="false" :show-file-lis
 
         <template #footer>
           <el-button @click="uploadDialogVisible = false">取消</el-button>
-          <el-button type="primary" :icon="UploadFilled" :disabled="!pendingFile" @click="confirmUpload">
+          <el-button
+            type="primary"
+            :icon="UploadFilled"
+            :disabled="!pendingFile"
+            @click="confirmUpload"
+          >
             开始导入
           </el-button>
         </template>
       </el-dialog>
     </div>
-    <stats />
-    <!-- 中间：显示控制 + 测量工具 -->
     <div class="toolbar-center" v-if="hasModel">
-      <!-- 显示控制 -->
       <el-tooltip content="坐标轴" placement="bottom">
         <el-button :type="showAxes ? 'primary' : 'default'" @click="$emit('toggleAxes')" text>
           轴
@@ -93,34 +122,45 @@ ref="elUploadRef" class="step-uploader" drag :auto-upload="false" :show-file-lis
           网格
         </el-button>
       </el-tooltip>
-      <!-- 透明度滑块 -->
       <div class="opacity-control">
         <span class="opacity-label">透明度</span>
         <el-slider
-v-model="localOpacity" :min="0" :max="100" :step="5" :show-tooltip="true"
-          :format-tooltip="(val: any) => `${val}%`" @change="handleOpacityInput" style="width: 100px" />
+          v-model="localOpacity"
+          :min="0"
+          :max="100"
+          :step="5"
+          :show-tooltip="true"
+          :format-tooltip="(val: any) => `${val}%`"
+          @change="handleOpacityInput"
+          style="width: 100px"
+        />
       </div>
 
       <el-divider direction="vertical" />
 
-      <!-- 画线测量 -->
       <el-tooltip content="画线测量（点击模型/空间画直线，自动计算距离）" placement="bottom">
-        <el-button :type="isLineMeasureActive ? 'warning' : 'default'" @click="$emit('toggleLineMeasure')" text>
+        <el-button
+          :type="isLineMeasureActive ? 'warning' : 'default'"
+          @click="$emit('toggleLineMeasure')"
+          text
+        >
           画线测量
         </el-button>
       </el-tooltip>
 
       <el-divider direction="vertical" />
 
-      <!-- 模型结构树面板切换 -->
       <el-tooltip content="打开/关闭模型结构树面板" placement="bottom">
-        <el-button :type="isModelTreeOpen ? 'primary' : 'default'" @click="$emit('toggleModelTree')" text>
+        <el-button
+          :type="isModelTreeOpen ? 'primary' : 'default'"
+          @click="$emit('toggleModelTree')"
+          text
+        >
           模型树
         </el-button>
       </el-tooltip>
     </div>
 
-    <!-- 右侧：清空/重置 + FPS -->
     <div class="toolbar-right" v-if="hasModel">
       <el-tooltip content="取消选择" placement="bottom">
         <el-button @click="$emit('clearSelection')" :disabled="!hasSelection" text>
@@ -135,21 +175,34 @@ v-model="localOpacity" :min="0" :max="100" :step="5" :show-tooltip="true"
       </el-tooltip>
       <el-divider direction="vertical" />
       <el-tooltip content="性能监控" placement="bottom">
-        <el-button :type="showStats ? 'warning' : 'default'" @click="$emit('toggleStats')" :icon="DataLine" text>
+        <el-button
+          :type="showStats ? 'warning' : 'default'"
+          @click="$emit('toggleStats')"
+          :icon="DataLine"
+          text
+        >
           FPS
         </el-button>
       </el-tooltip>
 
       <el-divider direction="vertical" />
 
-      <!-- GitHub 链接 -->
       <el-tooltip content="GitHub 仓库" placement="bottom">
         <el-button class="github-btn" text @click="openGitHub">
-          <svg class="github-icon" viewBox="0 0 1024 1024" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+          <svg
+            class="github-icon"
+            viewBox="0 0 1024 1024"
+            width="18"
+            height="18"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             <path
-fill-rule="evenodd" clip-rule="evenodd"
+              fill-rule="evenodd"
+              clip-rule="evenodd"
               d="M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.73 6.56 11.53C4.78 11.33 2.92 10.64 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.33 9.47 11.53C9.76 11.78 10.01 12.26 10.01 13.01C10.01 14.08 10 14.94 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z"
-              transform="scale(64)" fill="currentColor" />
+              transform="scale(64)"
+              fill="currentColor"
+            />
           </svg>
         </el-button>
       </el-tooltip>
@@ -158,9 +211,9 @@ fill-rule="evenodd" clip-rule="evenodd"
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import type { UploadFile, UploadInstance } from 'element-plus'
+import { ref, computed, watch } from "vue";
+import { ElMessage } from "element-plus";
+import type { UploadFile, UploadInstance } from "element-plus";
 import {
   UploadFilled,
   Aim,
@@ -168,111 +221,107 @@ import {
   DataLine,
   Document,
   Close,
-  CircleCheckFilled
-} from '@element-plus/icons-vue'
-// Types removed: GranularityMode, ViewMode no longer needed
+  CircleCheckFilled,
+} from "@element-plus/icons-vue";
 
 const props = defineProps<{
-  fileName: string
-  isLoading: boolean
-  hasModel: boolean
-  hasSelection: boolean
-  showAxes: boolean
-  showGrid: boolean
-  showStats: boolean
-  /** OpenCASCADE WASM 是否已加载完成 */
-  occtReady: boolean
-  /** WASM 加载进度 0-100 */
-  occtLoadProgress?: number
-  /** 画线测量模式是否激活 */
-  isLineMeasureActive?: boolean
-  /** 模型结构树面板是否打开 */
-  isModelTreeOpen?: boolean
-  /** 当前透明度（0~100） */
-  opacity?: number
-}>()
+  fileName: string;
+  isLoading: boolean;
+  hasModel: boolean;
+  hasSelection: boolean;
+  showAxes: boolean;
+  showGrid: boolean;
+  showStats: boolean;
+  occtReady: boolean;
+  occtLoadProgress?: number;
+  isLineMeasureActive?: boolean;
+  isModelTreeOpen?: boolean;
+  opacity?: number;
+}>();
 
 const emit = defineEmits<{
-  (e: 'upload', file: File): void
-  (e: 'fitView'): void
-  (e: 'toggleAxes'): void
-  (e: 'toggleGrid'): void
-  (e: 'opacityChange', value: number): void
-  (e: 'clearSelection'): void
-  (e: 'resetView'): void
-  (e: 'toggleStats'): void
-  (e: 'toggleLineMeasure'): void
-  (e: 'toggleModelTree'): void
-}>()
+  (e: "upload", file: File): void;
+  (e: "fitView"): void;
+  (e: "toggleAxes"): void;
+  (e: "toggleGrid"): void;
+  (e: "opacityChange", value: number): void;
+  (e: "clearSelection"): void;
+  (e: "resetView"): void;
+  (e: "toggleStats"): void;
+  (e: "toggleLineMeasure"): void;
+  (e: "toggleModelTree"): void;
+}>();
 
-const localOpacity = ref(props.opacity ?? 100)
+const localOpacity = ref(props.opacity ?? 100);
 
-// ── 上传弹框状态 ───────────────────────────────────────────────────────────
-const uploadDialogVisible = ref(false)
-const pendingFile = ref<File | null>(null)
-const elUploadRef = ref<UploadInstance>()
+const uploadDialogVisible = ref(false);
+const pendingFile = ref<File | null>(null);
+const elUploadRef = ref<UploadInstance>();
 
-/** 从文件名提取扩展名大写标签 */
 const fileExtension = computed(() => {
-  if (!pendingFile.value) return ''
-  return pendingFile.value.name.toLowerCase().endsWith('.step') ? 'STEP' : 'STP'
-})
+  if (!pendingFile.value) return "";
+  return pendingFile.value.name.toLowerCase().endsWith(".step") ? "STEP" : "STP";
+});
 
 function isValidStepFile(file: File): boolean {
-  const name = file.name.toLowerCase()
-  return name.endsWith('.step') || name.endsWith('.stp')
+  const name = file.name.toLowerCase();
+  return name.endsWith(".step") || name.endsWith(".stp");
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function openUploadDialog(): void {
-  pendingFile.value = null
-  uploadDialogVisible.value = true
-  // 对话框打开后清空 el-upload 内部文件列表
-  setTimeout(() => elUploadRef.value?.clearFiles(), 80)
+  pendingFile.value = null;
+  uploadDialogVisible.value = true;
+  setTimeout(() => elUploadRef.value?.clearFiles(), 80);
 }
 
 function handleElUploadChange(uploadFile: UploadFile): void {
-  const raw = uploadFile.raw
-  if (!raw) return
+  const raw = uploadFile.raw;
+  if (!raw) return;
   if (!isValidStepFile(raw)) {
-    ElMessage.warning('仅支持 .step / .stp 格式的文件')
-    elUploadRef.value?.clearFiles()
-    return
+    ElMessage.warning("仅支持 .step / .stp 格式的文件");
+    elUploadRef.value?.clearFiles();
+    return;
   }
-  pendingFile.value = raw
+  pendingFile.value = raw;
 }
 
 function removePendingFile(): void {
-  pendingFile.value = null
-  elUploadRef.value?.clearFiles()
+  pendingFile.value = null;
+  elUploadRef.value?.clearFiles();
 }
 
 function confirmUpload(): void {
-  if (!pendingFile.value) return
-  emit('upload', pendingFile.value)
-  uploadDialogVisible.value = false
-  pendingFile.value = null
+  if (!pendingFile.value) return;
+  emit("upload", pendingFile.value);
+  uploadDialogVisible.value = false;
+  pendingFile.value = null;
 }
 
-// 同步外部 opacity prop 到本地
-watch(() => props.opacity, (val) => {
-  if (val !== undefined) localOpacity.value = val
-})
+watch(
+  () => props.opacity,
+  (val) => {
+    if (val !== undefined) localOpacity.value = val;
+  },
+);
 
 function handleOpacityInput(val: number | number[]): void {
-  const v = Array.isArray(val) ? val[0] : val
-  emit('opacityChange', v)
+  const v = Array.isArray(val) ? val[0] : val;
+  emit("opacityChange", v);
 }
 
 function openGitHub(): void {
-  window.open('https://github.com/Democratizing-Dexterous/URDFlyS2U', '_blank', 'noopener,noreferrer')
+  window.open(
+    "https://github.com/Democratizing-Dexterous/URDFlyS2U",
+    "_blank",
+    "noopener,noreferrer",
+  );
 }
-
 </script>
 
 <style lang="scss" scoped>
@@ -399,16 +448,12 @@ function openGitHub(): void {
   }
 }
 
-/* ─── 上传弹框：自有插槽内容样式 ─────────────────────────────────── */
-
-/* dialog body 容器 */
 .upload-dialog-body {
   display: flex;
   flex-direction: column;
   gap: 0;
 }
 
-/* 上传占位内容（el-upload 默认槽） */
 .upload-placeholder {
   padding: 32px 20px 26px;
   display: flex;
@@ -425,7 +470,9 @@ function openGitHub(): void {
     align-items: center;
     justify-content: center;
     margin-bottom: 4px;
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    transition:
+      transform 0.25s ease,
+      box-shadow 0.25s ease;
 
     .uph-icon {
       font-size: 34px;
@@ -467,7 +514,6 @@ function openGitHub(): void {
   }
 }
 
-/* 已选文件预览卡片 */
 .selected-file-card {
   display: flex;
   align-items: center;
@@ -556,7 +602,6 @@ function openGitHub(): void {
   }
 }
 
-/* 卡片滑入动画 */
 .file-card-slide-enter-active {
   transition: all 0.28s cubic-bezier(0.34, 1.3, 0.64, 1);
 }
@@ -575,7 +620,6 @@ function openGitHub(): void {
   transform: translateY(-4px) scale(0.98);
 }
 
-/* ─── el-upload dragger 样式覆盖（:deep 穿透子组件） ───────────── */
 :deep(.step-uploader) {
   width: 100%;
 
@@ -591,7 +635,10 @@ function openGitHub(): void {
     border: 2px dashed #dde3ed;
     border-radius: 12px;
     background: #fafcff;
-    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      border-color 0.2s ease,
+      background 0.2s ease,
+      box-shadow 0.2s ease;
 
     &:hover {
       border-color: #409eff;
@@ -623,7 +670,6 @@ function openGitHub(): void {
 }
 </style>
 
-/* ─── 全局覆盖 el-dialog 内部间距（dialog 被 teleport 到 body，需非 scoped） ─── */
 <style>
 .step-upload-dialog .el-dialog__header {
   padding: 20px 24px 16px;

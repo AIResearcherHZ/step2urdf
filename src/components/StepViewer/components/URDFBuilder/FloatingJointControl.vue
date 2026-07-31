@@ -1,14 +1,7 @@
-<!--
-  浮动关节控制面板
-  参考 URDFEditor.vue 的拖拽实现
-  支持拖拽移动
--->
-
 <template>
   <Teleport to="body">
     <Transition name="fk-panel">
       <div v-show="visible" class="fk-floating-panel" :style="panelStyle" @mousedown.stop>
-        <!-- 标题栏（可拖拽） -->
         <div class="fk-title-bar" @mousedown="startDrag">
           <span class="fk-title">🎛️ 关节控制</span>
           <div class="fk-title-actions">
@@ -18,7 +11,6 @@
           </div>
         </div>
 
-        <!-- 关节滑块列表 -->
         <div class="fk-body">
           <div v-if="urdfStore.activeJoints.length > 0" class="slider-list">
             <JointSlider v-for="joint in urdfStore.activeJoints" :key="joint.id" :joint="joint" />
@@ -31,52 +23,57 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useURDFStore } from '../../stores/useURDFStore'
-import JointSlider from './JointSlider.vue'
+import { ref, computed } from "vue";
+import { useURDFStore } from "../../stores/useURDFStore";
+import JointSlider from "./JointSlider.vue";
 
 defineProps<{
-  visible: boolean
-}>()
+  visible: boolean;
+}>();
 
 defineEmits<{
-  (e: 'close'): void
-}>()
+  (e: "close"): void;
+}>();
 
-const urdfStore = useURDFStore()
+const urdfStore = useURDFStore();
 
-// 面板位置（居中偏右）
-const posX = ref(Math.max(40, Math.min(window.innerWidth - 360, window.innerWidth * 0.6)))
-const posY = ref(Math.max(40, window.innerHeight - 460))
+const posX = ref(Math.max(40, Math.min(window.innerWidth - 360, window.innerWidth * 0.6)));
+const posY = ref(Math.max(40, window.innerHeight - 460));
 
 const panelStyle = computed(() => ({
   left: `${posX.value}px`,
   top: `${posY.value}px`,
-}))
+}));
 
 function startDrag(e: MouseEvent): void {
-  e.preventDefault()
-  const startX = e.clientX
-  const startY = e.clientY
-  const startPosX = posX.value
-  const startPosY = posY.value
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startPosX = posX.value;
+  const startPosY = posY.value;
 
   const onMouseMove = (moveEvent: MouseEvent) => {
-    posX.value = Math.max(0, Math.min(window.innerWidth - 100, startPosX + moveEvent.clientX - startX))
-    posY.value = Math.max(0, Math.min(window.innerHeight - 50, startPosY + moveEvent.clientY - startY))
-  }
+    posX.value = Math.max(
+      0,
+      Math.min(window.innerWidth - 100, startPosX + moveEvent.clientX - startX),
+    );
+    posY.value = Math.max(
+      0,
+      Math.min(window.innerHeight - 50, startPosY + moveEvent.clientY - startY),
+    );
+  };
 
   const onMouseUp = () => {
-    document.removeEventListener('mousemove', onMouseMove)
-    document.removeEventListener('mouseup', onMouseUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }
+    document.removeEventListener("mousemove", onMouseMove);
+    document.removeEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
 
-  document.body.style.cursor = 'move'
-  document.body.style.userSelect = 'none'
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', onMouseUp)
+  document.body.style.cursor = "move";
+  document.body.style.userSelect = "none";
+  document.addEventListener("mousemove", onMouseMove);
+  document.addEventListener("mouseup", onMouseUp);
 }
 </script>
 
@@ -152,11 +149,15 @@ function startDrag(e: MouseEvent): void {
 }
 
 .fk-panel-enter-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .fk-panel-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .fk-panel-enter-from {

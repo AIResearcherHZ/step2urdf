@@ -1,32 +1,48 @@
 <template>
   <div class="link-properties" v-if="link">
-
     <div v-if="urdfStore.isBaseLink(link.id)" class="base-origin-section">
       <div class="base-origin-header">
         <span class="base-origin-title">🌐 基坐标系原点</span>
         <el-tag :type="urdfStore.baseLinkOrigin ? 'success' : 'warning'" effect="light">
-          {{ urdfStore.baseLinkOrigin ? '已设置' : '未设置' }}
+          {{ urdfStore.baseLinkOrigin ? "已设置" : "未设置" }}
         </el-tag>
       </div>
 
       <el-alert
-v-if="link.solidIds.length > 0 && !urdfStore.baseLinkOrigin" title="已绑定 Solid，请设置坐标基点以定义运动树计算起点"
-        type="warning" :closable="false" show-icon class="base-origin-alert" />
+        v-if="link.solidIds.length > 0 && !urdfStore.baseLinkOrigin"
+        title="已绑定 Solid，请设置坐标基点以定义运动树计算起点"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="base-origin-alert"
+      />
 
       <div class="origin-rows">
         <div class="origin-row" v-for="(ax, idx) in axisConfig" :key="ax.key">
           <span class="origin-axis-lbl" :style="{ color: ax.color }">{{ ax.key }}</span>
           <el-input-number
-:model-value="editableOrigin[idx]"
-            @update:model-value="(v: number | undefined) => onAxisInput(idx, v ?? 0)" :precision="4" :step="0.001"
-            controls-position="right" style="flex: 1; min-width: 0" />
+            :model-value="editableOrigin[idx]"
+            @update:model-value="(v: number | undefined) => onAxisInput(idx, v ?? 0)"
+            :precision="4"
+            :step="0.001"
+            controls-position="right"
+            style="flex: 1; min-width: 0"
+          />
         </div>
       </div>
 
       <div class="origin-actions">
         <div class="origin-btn-row">
-          <el-tooltip content="按 Z-up 约定取已绑定 Solid 包围盒的底面中心（最小 Z）" placement="top">
-            <el-button type="primary" plain :disabled="link.solidIds.length === 0" @click="autoCalcOrigin">
+          <el-tooltip
+            content="按 Z-up 约定取已绑定 Solid 包围盒的底面中心（最小 Z）"
+            placement="top"
+          >
+            <el-button
+              type="primary"
+              plain
+              :disabled="link.solidIds.length === 0"
+              @click="autoCalcOrigin"
+            >
               自动计算
             </el-button>
           </el-tooltip>
@@ -35,7 +51,6 @@ v-if="link.solidIds.length > 0 && !urdfStore.baseLinkOrigin" title="已绑定 So
           </el-button>
         </div>
       </div>
-
     </div>
 
     <el-collapse v-model="openPanels">
@@ -48,21 +63,35 @@ v-if="link.solidIds.length > 0 && !urdfStore.baseLinkOrigin" title="已绑定 So
             <el-icon>
               <Files />
             </el-icon>
-            <span class="solid-name" :title="getSolidName(solidId)">{{ getSolidName(solidId) }}</span>
+            <span class="solid-name" :title="getSolidName(solidId)">{{
+              getSolidName(solidId)
+            }}</span>
             <span v-if="getSolidMass(solidId) !== null" class="solid-mass">
               {{ getSolidMass(solidId)!.toFixed(3) }} kg
             </span>
-            <el-button text type="danger" :icon="Delete" @click="handleUnbind(solidId)" class="unbind-btn" />
+            <el-button
+              text
+              type="danger"
+              :icon="Delete"
+              @click="handleUnbind(solidId)"
+              class="unbind-btn"
+            />
           </div>
 
           <div class="bind-actions">
             <el-button
-v-if="!urdfStore.bindingMode.active" type="primary" plain :icon="Paperclip"
-              @click="urdfStore.startBindingMode(link.id)">
+              v-if="!urdfStore.bindingMode.active"
+              type="primary"
+              plain
+              :icon="Paperclip"
+              @click="urdfStore.startBindingMode(link.id)"
+            >
               绑定 Solid
             </el-button>
             <template v-else-if="urdfStore.bindingMode.targetLinkId === link.id">
-              <el-button size="default" type="success" @click="urdfStore.stopBindingMode()"> 完成绑定</el-button>
+              <el-button size="default" type="success" @click="urdfStore.stopBindingMode()">
+                完成绑定</el-button
+              >
             </template>
           </div>
 
@@ -83,113 +112,138 @@ v-if="!urdfStore.bindingMode.active" type="primary" plain :icon="Paperclip"
             <div class="prop-row">
               <span class="prop-label">质心</span>
               <span class="prop-value">
-                {{ link.inertial.com.map(v => v.toFixed(2)).join(', ') }} mm
+                {{ link.inertial.com.map((v) => v.toFixed(2)).join(", ") }} mm
               </span>
             </div>
             <div class="inertia-grid">
               <span class="inertia-title">惯性张量（kg·m²）</span>
               <div class="inertia-row">
-                <span class="inertia-cell">Ixx: {{ link.inertial.inertia[0].toExponential(3) }}</span>
-                <span class="inertia-cell">Ixy: {{ link.inertial.inertia[1].toExponential(3) }}</span>
-                <span class="inertia-cell">Ixz: {{ link.inertial.inertia[2].toExponential(3) }}</span>
+                <span class="inertia-cell"
+                  >Ixx: {{ link.inertial.inertia[0].toExponential(3) }}</span
+                >
+                <span class="inertia-cell"
+                  >Ixy: {{ link.inertial.inertia[1].toExponential(3) }}</span
+                >
+                <span class="inertia-cell"
+                  >Ixz: {{ link.inertial.inertia[2].toExponential(3) }}</span
+                >
               </div>
               <div class="inertia-row">
-                <span class="inertia-cell">Iyy: {{ link.inertial.inertia[3].toExponential(3) }}</span>
-                <span class="inertia-cell">Iyz: {{ link.inertial.inertia[4].toExponential(3) }}</span>
-                <span class="inertia-cell">Izz: {{ link.inertial.inertia[5].toExponential(3) }}</span>
+                <span class="inertia-cell"
+                  >Iyy: {{ link.inertial.inertia[3].toExponential(3) }}</span
+                >
+                <span class="inertia-cell"
+                  >Iyz: {{ link.inertial.inertia[4].toExponential(3) }}</span
+                >
+                <span class="inertia-cell"
+                  >Izz: {{ link.inertial.inertia[5].toExponential(3) }}</span
+                >
               </div>
             </div>
           </template>
           <div v-else class="empty-hint">请使用左侧「整机惯量计算」功能统一计算</div>
         </div>
       </el-collapse-item>
-
     </el-collapse>
   </div>
 
   <div v-else class="empty-hint">未选中任何连杆</div>
-
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Files, Delete, Paperclip } from '@element-plus/icons-vue'
-import { useURDFStore } from '../../stores/useURDFStore'
-import { useStepViewerStore } from '../../stores/useStepViewerStore'
+import { ref, computed, watch } from "vue";
+import { ElMessage } from "element-plus";
+import { Files, Delete, Paperclip } from "@element-plus/icons-vue";
+import { useURDFStore } from "../../stores/useURDFStore";
+import { useStepViewerStore } from "../../stores/useStepViewerStore";
 
-const urdfStore = useURDFStore()
-const stepStore = useStepViewerStore()
+const urdfStore = useURDFStore();
+const stepStore = useStepViewerStore();
 
-const openPanels = ref<string[]>(['solids', 'physics'])
+const openPanels = ref<string[]>(["solids", "physics"]);
 
 const link = computed(() => {
-  if (!urdfStore.selectedLinkId) return null
-  return urdfStore.linkMap.get(urdfStore.selectedLinkId) ?? null
-})
+  if (!urdfStore.selectedLinkId) return null;
+  return urdfStore.linkMap.get(urdfStore.selectedLinkId) ?? null;
+});
 
 function handleUnbind(solidId: string): void {
-  if (link.value) urdfStore.unbindSolid(link.value.id, solidId)
+  if (link.value) urdfStore.unbindSolid(link.value.id, solidId);
 }
 
 function getSolidName(solidId: string): string {
-  return stepStore.solidMap.get(solidId)?.name ?? solidId
+  return stepStore.solidMap.get(solidId)?.name ?? solidId;
 }
 
 function getSolidMass(solidId: string): number | null {
-  const m = link.value?.solidMasses?.[solidId]
-  return typeof m === 'number' && m > 0 ? m : null
+  const m = link.value?.solidMasses?.[solidId];
+  return typeof m === "number" && m > 0 ? m : null;
 }
 
 const axisConfig = [
-  { key: 'X', color: '#f56c6c' },
-  { key: 'Y', color: '#67c23a' },
-  { key: 'Z', color: '#409eff' }
-]
+  { key: "X", color: "#f56c6c" },
+  { key: "Y", color: "#67c23a" },
+  { key: "Z", color: "#409eff" },
+];
 
-const editableOrigin = ref<[number, number, number]>([0, 0, 0])
+const editableOrigin = ref<[number, number, number]>([0, 0, 0]);
 
 watch(
   () => urdfStore.baseLinkOrigin,
-  (v) => { editableOrigin.value = v ? [...v] as [number, number, number] : [0, 0, 0] },
-  { immediate: true, deep: true }
-)
+  (v) => {
+    editableOrigin.value = v ? ([...v] as [number, number, number]) : [0, 0, 0];
+  },
+  { immediate: true, deep: true },
+);
 
 function onAxisInput(idx: number, val: number): void {
-  const o: [number, number, number] = [...editableOrigin.value] as [number, number, number]
-  o[idx] = val
-  editableOrigin.value = o
-  urdfStore.baseLinkOrigin = [...o] as [number, number, number]
+  const o: [number, number, number] = [...editableOrigin.value] as [number, number, number];
+  o[idx] = val;
+  editableOrigin.value = o;
+  urdfStore.baseLinkOrigin = [...o] as [number, number, number];
 }
 
 function clearBaseOrigin(): void {
-  urdfStore.baseLinkOrigin = null
-  urdfStore.baseLinkRPY = null
+  urdfStore.baseLinkOrigin = null;
+  urdfStore.baseLinkRPY = null;
 }
 
 function autoCalcOrigin(): void {
-  if (!link.value || link.value.solidIds.length === 0) return
-  let xMin = Infinity, yMin = Infinity, zMin = Infinity
-  let xMax = -Infinity, yMax = -Infinity, zMax = -Infinity
-  let found = false
+  if (!link.value || link.value.solidIds.length === 0) return;
+  let xMin = Infinity,
+    yMin = Infinity,
+    zMin = Infinity;
+  let xMax = -Infinity,
+    yMax = -Infinity,
+    zMax = -Infinity;
+  let found = false;
   for (const sid of link.value.solidIds) {
-    const pos = stepStore.solidMap.get(sid)?.serializedData?.positions
-    if (!pos) continue
-    found = true
+    const pos = stepStore.solidMap.get(sid)?.serializedData?.positions;
+    if (!pos) continue;
+    found = true;
     for (let i = 0; i < pos.length; i += 3) {
-      if (pos[i] < xMin) xMin = pos[i]; if (pos[i] > xMax) xMax = pos[i]
-      if (pos[i + 1] < yMin) yMin = pos[i + 1]; if (pos[i + 1] > yMax) yMax = pos[i + 1]
-      if (pos[i + 2] < zMin) zMin = pos[i + 2]; if (pos[i + 2] > zMax) zMax = pos[i + 2]
+      if (pos[i] < xMin) xMin = pos[i];
+      if (pos[i] > xMax) xMax = pos[i];
+      if (pos[i + 1] < yMin) yMin = pos[i + 1];
+      if (pos[i + 1] > yMax) yMax = pos[i + 1];
+      if (pos[i + 2] < zMin) zMin = pos[i + 2];
+      if (pos[i + 2] > zMax) zMax = pos[i + 2];
     }
   }
-  if (!found) { ElMessage.warning('未找到有效几何数据'); return }
-  const round = (v: number) => Math.round(v * 10000) / 10000
-  const cx = (xMin + xMax) / 2, cy = (yMin + yMax) / 2
-  const ox = cx, oy = cy, oz = zMin
-  urdfStore.baseLinkOrigin = [round(ox), round(oy), round(oz)]
+  if (!found) {
+    ElMessage.warning("未找到有效几何数据");
+    return;
+  }
+  const round = (v: number) => Math.round(v * 10000) / 10000;
+  const cx = (xMin + xMax) / 2,
+    cy = (yMin + yMax) / 2;
+  const ox = cx,
+    oy = cy,
+    oz = zMin;
+  urdfStore.baseLinkOrigin = [round(ox), round(oy), round(oz)];
 
-  urdfStore.baseLinkRPY = [0, 0, 0]
-  ElMessage.success('已自动设置基点（包围盒底面中心）')
+  urdfStore.baseLinkRPY = [0, 0, 0];
+  ElMessage.success("已自动设置基点（包围盒底面中心）");
 }
 </script>
 

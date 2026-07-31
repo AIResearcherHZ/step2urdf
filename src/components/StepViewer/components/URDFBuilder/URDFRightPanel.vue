@@ -1,7 +1,5 @@
 <template>
   <div class="urdf-right-panel">
-
-    <!-- ===== 上部：上下文属性面板（Link / Joint） ===== -->
     <div class="panel-section expanded">
       <div class="section-header">
         <span class="section-title">{{ contextTitle }}</span>
@@ -19,10 +17,8 @@
       </div>
     </div>
 
-    <!-- 分隔线 -->
     <div class="section-divider" />
 
-    <!-- ===== 闭链约束 ===== -->
     <div class="panel-section loops-section">
       <div class="section-header">
         <span class="section-title">闭链 / 约束</span>
@@ -34,7 +30,6 @@
 
     <div class="section-divider" />
 
-    <!-- ===== 碰撞体简化 ===== -->
     <div class="panel-section collision-section">
       <div class="section-header">
         <span class="section-title">碰撞体简化</span>
@@ -49,43 +44,41 @@
 
     <div class="section-divider" />
 
-    <!-- ===== 下部：关节控制打开按钮 ===== -->
     <div class="fk-launch-bar">
-      <el-button type="primary" plain @click="$emit('toggleFKPanel')">
-        关节控制面板
-      </el-button>
-      <span v-if="urdfStore.activeJoints.length" class="fk-count">{{ urdfStore.activeJoints.length }} 个可控关节</span>
+      <el-button type="primary" plain @click="$emit('toggleFKPanel')"> 关节控制面板 </el-button>
+      <span v-if="urdfStore.activeJoints.length" class="fk-count"
+        >{{ urdfStore.activeJoints.length }} 个可控关节</span
+      >
     </div>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Connection } from '@element-plus/icons-vue'
-import { useURDFStore } from '../../stores/useURDFStore'
-import URDFJointProperties from './URDFJointProperties.vue'
-import URDFLinkProperties from './URDFLinkProperties.vue'
-import LoopsModule from './LoopsModule.vue'
-import CollisionModule from './CollisionModule.vue'
+import { computed } from "vue";
+import { Connection } from "@element-plus/icons-vue";
+import { useURDFStore } from "../../stores/useURDFStore";
+import URDFJointProperties from "./URDFJointProperties.vue";
+import URDFLinkProperties from "./URDFLinkProperties.vue";
+import LoopsModule from "./LoopsModule.vue";
+import CollisionModule from "./CollisionModule.vue";
 
 defineEmits<{
-  (e: 'toggleFKPanel'): void
-}>()
+  (e: "toggleFKPanel"): void;
+}>();
 
-const urdfStore = useURDFStore()
+const urdfStore = useURDFStore();
 
 const contextTitle = computed(() => {
   if (urdfStore.selectedJointId) {
-    const j = urdfStore.jointMap.get(urdfStore.selectedJointId)
-    return `${j?.name ?? 'Joint 属性'}`
+    const j = urdfStore.jointMap.get(urdfStore.selectedJointId);
+    return `${j?.name ?? "Joint 属性"}`;
   }
   if (urdfStore.selectedLinkId) {
-    const l = urdfStore.linkMap.get(urdfStore.selectedLinkId)
-    return `${l?.name ?? 'Link 属性'}`
+    const l = urdfStore.linkMap.get(urdfStore.selectedLinkId);
+    return `${l?.name ?? "Link 属性"}`;
   }
-  return '属性面板'
-})
+  return "属性面板";
+});
 </script>
 
 <style lang="scss" scoped>
@@ -100,7 +93,6 @@ const contextTitle = computed(() => {
   flex-shrink: 0;
 }
 
-/* ——— 面板区域 ——— */
 .panel-section {
   display: flex;
   flex-direction: column;
@@ -128,7 +120,6 @@ const contextTitle = computed(() => {
   background: #e4e7ed;
 }
 
-/* ——— 区域标题 ——— */
 .section-header {
   display: flex;
   align-items: center;
@@ -151,7 +142,6 @@ const contextTitle = computed(() => {
   }
 }
 
-/* ——— 区域内容 ——— */
 .section-body {
   flex: 1;
   overflow-y: auto;

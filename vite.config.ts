@@ -1,9 +1,7 @@
 import { fileURLToPath, URL } from "node:url";
-
 import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
-import { resolve } from "path";
-import { createSvgIconsPlugin } from "vite-plugin-svg-icons";
+
 const wasmAsUrl = (): Plugin => ({
   name: "wasm-as-url",
   enforce: "pre",
@@ -12,7 +10,7 @@ const wasmAsUrl = (): Plugin => ({
     const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
     if (!resolved || resolved.id.includes("?")) return resolved;
     return `${resolved.id}?url`;
-  }
+  },
 });
 
 const OCCT_NODE_BUILTINS = new Set(["path", "fs", "crypto", "node:path", "node:fs", "node:crypto"]);
@@ -30,57 +28,36 @@ const stubOcctNodeBuiltins = (): Plugin => ({
   load(id) {
     if (id !== OCCT_EMPTY_ID) return null;
     return "export default {};";
-  }
+  },
 });
 
 export default defineConfig({
-  plugins: [wasmAsUrl(), stubOcctNodeBuiltins(), vue(), createSvgIconsPlugin({
-    iconDirs: [resolve(process.cwd(), "src/assets/svgs")],
-    symbolId: "icon-[dir]-[name]"
-  })],
-  assetsInclude: ['**/*.wasm'],
+  plugins: [wasmAsUrl(), stubOcctNodeBuiltins(), vue()],
+  assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
-    exclude: ['opencascade.js'],
-    include: ['gl-matrix', 'jszip', 'comlink']
+    exclude: ["opencascade.js"],
+    include: ["gl-matrix", "jszip", "comlink"],
   },
   worker: {
-    format: 'es',
+    format: "es",
     plugins: () => [wasmAsUrl(), stubOcctNodeBuiltins()],
-    rollupOptions: {
-      output: {
-        format: 'es'
-      }
-    }
   },
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url))
-    }
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
   },
   server: {
     host: "0.0.0.0",
     port: 5678,
     open: true,
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp'
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
     },
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8000/",
-        changeOrigin: true,
-        rewrite: path => path.replace(/^\/api/, "")
-      }
-    }
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {}
-    }
   },
   build: {
     outDir: "dist",
-    minify: true,
     sourcemap: false,
     reportCompressedSize: false,
     chunkSizeWarningLimit: 2000,
@@ -88,8 +65,8 @@ export default defineConfig({
       output: {
         chunkFileNames: "assets/js/[name]-[hash].js",
         entryFileNames: "assets/js/[name]-[hash].js",
-        assetFileNames: "assets/[ext]/[name]-[hash].[ext]"
-      }
-    }
-  }
+        assetFileNames: "assets/[ext]/[name]-[hash].[ext]",
+      },
+    },
+  },
 });

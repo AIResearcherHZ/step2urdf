@@ -1,11 +1,3 @@
-<!--
-  模型结构树组件（虚拟滚动版）
-  仿 SolidWorks 特征管理器 FeatureManager
-  支持 Compound → Solid → Edge 层级
-  双向联动 + 边缘描边高亮
-  使用 el-tree-v2 虚拟化，支持万级节点
--->
-
 <template>
   <div class="model-tree">
     <div class="tree-header">
@@ -20,35 +12,63 @@
 
     <div v-else class="tree-content" ref="treeContainerRef">
       <el-tree-v2
-ref="treeRef" :data="store.treeNodes" :props="treeProps" :height="treeHeight" :item-size="28"
-        :indent="24" :default-expanded-keys="store.expandedTreeNodeIds" :highlight-current="true"
-        :expand-on-click-node="false" :current-node-key="currentNodeKey" @node-click="handleNodeClick"
-        @node-expand="handleNodeExpand" @node-collapse="handleNodeCollapse">
+        ref="treeRef"
+        :data="store.treeNodes"
+        :props="treeProps"
+        :height="treeHeight"
+        :item-size="28"
+        :indent="24"
+        :default-expanded-keys="store.expandedTreeNodeIds"
+        :highlight-current="true"
+        :expand-on-click-node="false"
+        :current-node-key="currentNodeKey"
+        @node-click="handleNodeClick"
+        @node-expand="handleNodeExpand"
+        @node-collapse="handleNodeCollapse"
+      >
         <template #default="{ data }">
           <div
-class="tree-node" :class="{
-            'is-selected': store.selectedTreeNodeIdSet.has(data.id),
-            'is-solid': data.type === 'solid',
-            'is-edge': data.type === 'edge',
-            'is-compound': data.type === 'compound' || data.type === 'root'
-          }" @mouseenter="handleNodeMouseEnter(data)" @mouseleave="handleNodeMouseLeave">
+            class="tree-node"
+            :class="{
+              'is-selected': store.selectedTreeNodeIdSet.has(data.id),
+              'is-solid': data.type === 'solid',
+              'is-edge': data.type === 'edge',
+              'is-compound': data.type === 'compound' || data.type === 'root',
+            }"
+            @mouseenter="handleNodeMouseEnter(data)"
+            @mouseleave="handleNodeMouseLeave"
+          >
             <span class="node-icon">{{ getNodeIcon(data) }}</span>
             <span class="node-label" :title="data.name">{{ data.name }}</span>
             <span v-if="data.children && data.children.length" class="node-count">
               ({{ data.children.length }})
             </span>
-            <!-- Solid 节点显示/隐藏切换 -->
             <span
-v-if="data.type === 'solid'" class="node-visibility" :class="{ 'is-hidden': !isSolidVisible(data) }"
-              @click.stop="handleToggleVisibility(data)" :title="isSolidVisible(data) ? '隐藏' : '显示'">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              v-if="data.type === 'solid'"
+              class="node-visibility"
+              :class="{ 'is-hidden': !isSolidVisible(data) }"
+              @click.stop="handleToggleVisibility(data)"
+              :title="isSolidVisible(data) ? '隐藏' : '显示'"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
                 <template v-if="isSolidVisible(data)">
                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                   <circle cx="12" cy="12" r="3" />
                 </template>
                 <template v-else>
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                  <path
+                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+                  />
+                  <path
+                    d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"
+                  />
                   <line x1="1" y1="1" x2="23" y2="23" />
                 </template>
               </svg>
@@ -61,223 +81,208 @@ v-if="data.type === 'solid'" class="node-visibility" :class="{ 'is-hidden': !isS
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import type { TreeNode } from '../types'
-import { useStepViewerStore } from '../stores/useStepViewerStore'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import type { TreeNode } from "../types";
+import { useStepViewerStore } from "../stores/useStepViewerStore";
 
-const store = useStepViewerStore()
+const store = useStepViewerStore();
 
-// 事件
 const emit = defineEmits<{
-  (e: 'select', node: TreeNode, multi: boolean): void
-  (e: 'solidHover', solidId: string | null): void
-  (e: 'toggleSolidVisibility', solidId: string): void
-}>()
+  (e: "select", node: TreeNode, multi: boolean): void;
+  (e: "solidHover", solidId: string | null): void;
+  (e: "toggleSolidVisibility", solidId: string): void;
+}>();
 
-const treeRef = ref()
-const treeContainerRef = ref<HTMLElement>()
-const treeHeight = ref(Math.max(200, Math.floor(window.innerHeight * 0.7 - 80)))
-let selectionFromTree = false
+const treeRef = ref();
+const treeContainerRef = ref<HTMLElement>();
+const treeHeight = ref(Math.max(200, Math.floor(window.innerHeight * 0.7 - 80)));
+let selectionFromTree = false;
 
 const treeProps = {
-  children: 'children',
-  label: 'name',
-  value: 'id'
-}
+  children: "children",
+  label: "name",
+  value: "id",
+};
 
-/** 当前高亮的节点 key — 优先 solid_N 格式（树中一定存在），避免 face ID 无法匹配 */
 const currentNodeKey = computed(() => {
-  const ids = store.selectedTreeNodeIds
-  return ids.find(id => /^solid_\d+$/.test(id))
-    || ids.find(id => id.includes('_edge_'))
-    || ids[0]
-    || ''
-})
+  const ids = store.selectedTreeNodeIds;
+  return (
+    ids.find((id) => /^solid_\d+$/.test(id)) ||
+    ids.find((id) => id.includes("_edge_")) ||
+    ids[0] ||
+    ""
+  );
+});
 
-/**
- * 获取节点图标
- */
 function getNodeIcon(data: TreeNode): string {
   switch (data.type) {
-    case 'root': return '📦'
-    case 'compound': return '📁'
-    case 'solid': return '🧊'
-    case 'shell': return '🔲'
-    case 'edge': return getEdgeTypeIcon(data.name)
-    default: return '📄'
+    case "root":
+      return "📦";
+    case "compound":
+      return "📁";
+    case "solid":
+      return "🧊";
+    case "shell":
+      return "🔲";
+    case "edge":
+      return getEdgeTypeIcon(data.name);
+    default:
+      return "📄";
   }
 }
 
 function getEdgeTypeIcon(name: string): string {
-  if (name.includes('线段') || name.includes('直线')) return '➖'
-  if (name.includes('圆弧') || name.includes('圆')) return '➰'
-  if (name.includes('椰圆') || name.includes('椭圆')) return '⬭️'
-  if (name.includes('B样条') || name.includes('B-Spline')) return '〰️'
-  if (name.includes('Bezier') || name.includes('贝塞尔')) return '〰️'
-  return '—'
+  if (name.includes("线段") || name.includes("直线")) return "➖";
+  if (name.includes("圆弧") || name.includes("圆")) return "➰";
+  if (name.includes("椰圆") || name.includes("椭圆")) return "⬭️";
+  if (name.includes("B样条") || name.includes("B-Spline")) return "〰️";
+  if (name.includes("Bezier") || name.includes("贝塞尔")) return "〰️";
+  return "—";
 }
 
-/**
- * 处理节点点击 — el-tree-v2 签名: (data, node, e)
- */
 function handleNodeClick(data: any, _node: any, e: MouseEvent): void {
-  const node = data as TreeNode
-  const multi = e?.ctrlKey || e?.shiftKey || false
-  // 标记本次选择来自树，watcher 中不需要 scrollTo
-  selectionFromTree = true
-  emit('select', node, multi)
+  const node = data as TreeNode;
+  const multi = e?.ctrlKey || e?.shiftKey || false;
+  selectionFromTree = true;
+  emit("select", node, multi);
 }
 
-/**
- * 处理节点展开/折叠
- */
 function handleNodeExpand(data: any): void {
-  const node = data as TreeNode
+  const node = data as TreeNode;
   if (!store.expandedTreeNodeIds.includes(node.id)) {
-    store.expandedTreeNodeIds.push(node.id)
+    store.expandedTreeNodeIds.push(node.id);
   }
 }
 
 function handleNodeCollapse(data: any): void {
-  const node = data as TreeNode
-  const idx = store.expandedTreeNodeIds.indexOf(node.id)
+  const node = data as TreeNode;
+  const idx = store.expandedTreeNodeIds.indexOf(node.id);
   if (idx >= 0) {
-    store.expandedTreeNodeIds.splice(idx, 1)
+    store.expandedTreeNodeIds.splice(idx, 1);
   }
 }
 
-// ========== Hover & Visibility ==========
-let hoveredSolidId: string | null = null
-let hoverRafId = 0
+let hoveredSolidId: string | null = null;
+let hoverRafId = 0;
 
 function handleNodeMouseEnter(data: any): void {
-  const node = data as TreeNode
-  if (node.type !== 'solid' || node.solidIndex === undefined) {
-    // 非 solid 节点，清除 hover
+  const node = data as TreeNode;
+  if (node.type !== "solid" || node.solidIndex === undefined) {
     if (hoveredSolidId !== null) {
-      hoveredSolidId = null
-      cancelAnimationFrame(hoverRafId)
-      emit('solidHover', null)
+      hoveredSolidId = null;
+      cancelAnimationFrame(hoverRafId);
+      emit("solidHover", null);
     }
-    return
+    return;
   }
-  const solidId = `solid_${node.solidIndex}`
-  if (solidId === hoveredSolidId) return
-  hoveredSolidId = solidId
-  cancelAnimationFrame(hoverRafId)
+  const solidId = `solid_${node.solidIndex}`;
+  if (solidId === hoveredSolidId) return;
+  hoveredSolidId = solidId;
+  cancelAnimationFrame(hoverRafId);
   hoverRafId = requestAnimationFrame(() => {
-    emit('solidHover', hoveredSolidId)
-  })
+    emit("solidHover", hoveredSolidId);
+  });
 }
 
 function handleNodeMouseLeave(): void {
   if (hoveredSolidId !== null) {
-    hoveredSolidId = null
-    cancelAnimationFrame(hoverRafId)
-    emit('solidHover', null)
+    hoveredSolidId = null;
+    cancelAnimationFrame(hoverRafId);
+    emit("solidHover", null);
   }
 }
 
 function handleToggleVisibility(data: any): void {
-  const node = data as TreeNode
-  if (node.type !== 'solid' || node.solidIndex === undefined) return
-  const solidId = `solid_${node.solidIndex}`
-  emit('toggleSolidVisibility', solidId)
+  const node = data as TreeNode;
+  if (node.type !== "solid" || node.solidIndex === undefined) return;
+  const solidId = `solid_${node.solidIndex}`;
+  emit("toggleSolidVisibility", solidId);
 }
 
 function isSolidVisible(data: any): boolean {
-  const node = data as TreeNode
-  if (node.solidIndex === undefined) return true
-  return store.isSolidVisible(`solid_${node.solidIndex}`)
+  const node = data as TreeNode;
+  if (node.solidIndex === undefined) return true;
+  return store.isSolidVisible(`solid_${node.solidIndex}`);
 }
 
-/**
- * 查找目标节点的所有祖先节点 ID（用于确保展开路径）
- */
 function findAncestorIds(targetId: string): string[] {
-  const ancestors: string[] = []
+  const ancestors: string[] = [];
   const find = (nodes: TreeNode[], path: string[]): boolean => {
     for (const node of nodes) {
       if (node.id === targetId) {
-        ancestors.push(...path)
-        return true
+        ancestors.push(...path);
+        return true;
       }
       if (node.children) {
-        path.push(node.id)
-        if (find(node.children, path)) return true
-        path.pop()
+        path.push(node.id);
+        if (find(node.children, path)) return true;
+        path.pop();
       }
     }
-    return false
-  }
-  find(store.treeNodes, [])
-  return ancestors
+    return false;
+  };
+  find(store.treeNodes, []);
+  return ancestors;
 }
 
 function handleWindowResize() {
   nextTick(() => {
     if (treeContainerRef.value) {
-      const h = treeContainerRef.value.clientHeight
-      if (h > 100) treeHeight.value = h
+      const h = treeContainerRef.value.clientHeight;
+      if (h > 100) treeHeight.value = h;
     }
-  })
+  });
 }
 
 onMounted(() => {
   nextTick(() => {
     if (treeContainerRef.value) {
-      const h = treeContainerRef.value.clientHeight
-      if (h > 100) treeHeight.value = h
+      const h = treeContainerRef.value.clientHeight;
+      if (h > 100) treeHeight.value = h;
     }
-  })
-  window.addEventListener('resize', handleWindowResize)
-})
+  });
+  window.addEventListener("resize", handleWindowResize);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleWindowResize)
-})
+  window.removeEventListener("resize", handleWindowResize);
+});
 
-/**
- * 监听 3D 侧选中变化，同步高亮 + 滚动到对应树节点
- */
-watch(() => store.selectedTreeNodeIds, async (ids) => {
-  if (!ids.length || !treeRef.value) {
-    selectionFromTree = false
-    return
-  }
-
-  if (selectionFromTree) {
-    selectionFromTree = false
-    return
-  }
-
-  // 选择滚动目标：
-  // 树中只有 solid_N 和 solid_N_edge_M 两种节点，没有 solid_N_face_M
-  // 3D 点击面时 ids 可能包含 face ID（如 solid_5_face_0），必须跳过
-  let scrollTarget = ids.find(id => id.includes('_edge_'))
-  if (!scrollTarget) {
-    scrollTarget = ids.find(id => /^solid_\d+$/.test(id))
-    if (!scrollTarget) scrollTarget = ids[0]
-  }
-
-  // 展开目标节点的所有祖先
-  const ancestors = findAncestorIds(scrollTarget)
-  for (const id of ancestors) {
-    if (!store.expandedTreeNodeIds.includes(id)) {
-      store.expandedTreeNodeIds.push(id)
+watch(
+  () => store.selectedTreeNodeIds,
+  async (ids) => {
+    if (!ids.length || !treeRef.value) {
+      selectionFromTree = false;
+      return;
     }
-  }
 
-  // 强制同步 el-tree-v2 内部展开状态
-  treeRef.value.setExpandedKeys([...store.expandedTreeNodeIds])
+    if (selectionFromTree) {
+      selectionFromTree = false;
+      return;
+    }
 
-  // 等待虚拟列表完成重算
-  await nextTick()
-  await nextTick()
+    let scrollTarget = ids.find((id) => id.includes("_edge_"));
+    if (!scrollTarget) {
+      scrollTarget = ids.find((id) => /^solid_\d+$/.test(id));
+      if (!scrollTarget) scrollTarget = ids[0];
+    }
 
-  // 使用官方 scrollToNode API 滚动到目标
-  treeRef.value.scrollToNode(scrollTarget, 'center')
-}, { flush: 'post' })
+    const ancestors = findAncestorIds(scrollTarget);
+    for (const id of ancestors) {
+      if (!store.expandedTreeNodeIds.includes(id)) {
+        store.expandedTreeNodeIds.push(id);
+      }
+    }
+
+    treeRef.value.setExpandedKeys([...store.expandedTreeNodeIds]);
+
+    await nextTick();
+    await nextTick();
+
+    treeRef.value.scrollToNode(scrollTarget, "center");
+  },
+  { flush: "post" },
+);
 </script>
 
 <style scoped lang="scss">
@@ -384,7 +389,10 @@ watch(() => store.selectedTreeNodeIds, async (ids) => {
     margin-left: 4px;
     padding: 2px;
     border-radius: 3px;
-    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+    transition:
+      opacity 0.15s,
+      color 0.15s,
+      background-color 0.15s;
 
     &:hover {
       background-color: rgba(64, 158, 255, 0.1);
@@ -403,7 +411,6 @@ watch(() => store.selectedTreeNodeIds, async (ids) => {
   }
 }
 
-// 覆盖 el-tree-v2 默认样式
 :deep(.el-tree) {
   background: transparent;
   --el-tree-node-hover-bg-color: transparent;

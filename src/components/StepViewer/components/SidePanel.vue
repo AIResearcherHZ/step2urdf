@@ -1,25 +1,23 @@
-<!--
-  模型结构树浮动面板
-  可拖拽移动、关闭
--->
-
 <template>
   <Teleport to="body">
     <Transition name="model-tree-panel">
       <div
-v-show="visible" class="model-tree-panel-overlay" ref="panelRef"
-        :style="{ left: panelPos.x + 'px', top: panelPos.y + 'px', width: panelWidth + 'px' }">
-        <!-- 拖拽标题栏 -->
+        v-show="visible"
+        class="model-tree-panel-overlay"
+        ref="panelRef"
+        :style="{ left: panelPos.x + 'px', top: panelPos.y + 'px', width: panelWidth + 'px' }"
+      >
         <div class="panel-header" @mousedown="startDrag">
           <span class="panel-title">模型结构</span>
           <el-button size="small" text @click="$emit('close')">✕</el-button>
         </div>
 
         <ModelTree
-@select="handleTreeSelect" @solid-hover="handleSolidHover"
-          @toggle-solid-visibility="handleToggleSolidVisibility" />
+          @select="handleTreeSelect"
+          @solid-hover="handleSolidHover"
+          @toggle-solid-visibility="handleToggleSolidVisibility"
+        />
 
-        <!-- 拖拽调整宽度 -->
         <div class="resize-handle" @mousedown.prevent="startResize" />
       </div>
     </Transition>
@@ -27,87 +25,83 @@ v-show="visible" class="model-tree-panel-overlay" ref="panelRef"
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
-import type { TreeNode } from '../types'
-import ModelTree from './ModelTree.vue'
+import { ref, reactive } from "vue";
+import type { TreeNode } from "../types";
+import ModelTree from "./ModelTree.vue";
 
 defineProps<{
-  visible: boolean
-}>()
+  visible: boolean;
+}>();
 
-// 事件
 const emit = defineEmits<{
-  (e: 'treeSelect', node: TreeNode, multi: boolean): void
-  (e: 'solidHover', solidId: string | null): void
-  (e: 'toggleSolidVisibility', solidId: string): void
-  (e: 'close'): void
-}>()
+  (e: "treeSelect", node: TreeNode, multi: boolean): void;
+  (e: "solidHover", solidId: string | null): void;
+  (e: "toggleSolidVisibility", solidId: string): void;
+  (e: "close"): void;
+}>();
 
-// 面板状态
-const panelRef = ref<HTMLElement>()
-const panelWidth = ref(300)
+const panelRef = ref<HTMLElement>();
+const panelWidth = ref(300);
 
-const RIGHT_COLUMN_WIDTH = 160
-const PROPERTY_PANEL_WIDTH = 300
-const PANEL_TOP_OFFSET = 80
-const PANEL_EDGE_GAP = 12
+const RIGHT_COLUMN_WIDTH = 160;
+const PROPERTY_PANEL_WIDTH = 300;
+const PANEL_TOP_OFFSET = 80;
+const PANEL_EDGE_GAP = 12;
 
 function getDefaultPanelX(width: number): number {
-  const x = window.innerWidth - RIGHT_COLUMN_WIDTH - PROPERTY_PANEL_WIDTH - width - PANEL_EDGE_GAP
-  return Math.max(PANEL_EDGE_GAP, x)
+  const x = window.innerWidth - RIGHT_COLUMN_WIDTH - PROPERTY_PANEL_WIDTH - width - PANEL_EDGE_GAP;
+  return Math.max(PANEL_EDGE_GAP, x);
 }
 
-const panelPos = reactive({ x: getDefaultPanelX(panelWidth.value), y: PANEL_TOP_OFFSET })
+const panelPos = reactive({ x: getDefaultPanelX(panelWidth.value), y: PANEL_TOP_OFFSET });
 
 function handleTreeSelect(node: TreeNode, multi: boolean): void {
-  emit('treeSelect', node, multi)
+  emit("treeSelect", node, multi);
 }
 
 function handleSolidHover(solidId: string | null): void {
-  emit('solidHover', solidId)
+  emit("solidHover", solidId);
 }
 
 function handleToggleSolidVisibility(solidId: string): void {
-  emit('toggleSolidVisibility', solidId)
+  emit("toggleSolidVisibility", solidId);
 }
 
-// ——— 面板拖拽移动 ———
 function startDrag(e: MouseEvent): void {
-  if ((e.target as HTMLElement).closest('button, .el-button')) return
-  e.preventDefault()
-  const startX = e.clientX - panelPos.x
-  const startY = e.clientY - panelPos.y
+  if ((e.target as HTMLElement).closest("button, .el-button")) return;
+  e.preventDefault();
+  const startX = e.clientX - panelPos.x;
+  const startY = e.clientY - panelPos.y;
   const onMove = (ev: MouseEvent) => {
-    panelPos.x = Math.max(0, ev.clientX - startX)
-    panelPos.y = Math.max(0, ev.clientY - startY)
-  }
+    panelPos.x = Math.max(0, ev.clientX - startX);
+    panelPos.y = Math.max(0, ev.clientY - startY);
+  };
   const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.userSelect = ''
-  }
-  document.body.style.userSelect = 'none'
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    document.body.style.userSelect = "";
+  };
+  document.body.style.userSelect = "none";
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
 }
 
-// ——— 面板宽度拖拽 ———
 function startResize(e: MouseEvent): void {
-  const startX = e.clientX
-  const startWidth = panelWidth.value
+  const startX = e.clientX;
+  const startWidth = panelWidth.value;
   const onMove = (ev: MouseEvent) => {
-    panelWidth.value = Math.max(220, Math.min(500, startWidth + ev.clientX - startX))
-  }
+    panelWidth.value = Math.max(220, Math.min(500, startWidth + ev.clientX - startX));
+  };
   const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  };
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
 }
 </script>
 
@@ -158,13 +152,16 @@ function startResize(e: MouseEvent): void {
   }
 }
 
-/* 入场/退场过渡 */
 .model-tree-panel-enter-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .model-tree-panel-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .model-tree-panel-enter-from {

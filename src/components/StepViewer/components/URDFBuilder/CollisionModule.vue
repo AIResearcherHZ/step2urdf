@@ -11,22 +11,40 @@
       <div class="cm-row">
         <span class="cm-label">形状</span>
         <el-select v-model="urdfStore.collisionConfig.mode" size="small" class="cm-control">
-          <el-option v-for="opt in COLLISION_SHAPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          <el-option
+            v-for="opt in COLLISION_SHAPE_OPTIONS"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
         </el-select>
       </div>
 
       <div class="cm-row">
         <span class="cm-label">间隙 (mm)</span>
         <el-input-number
-          v-model="urdfStore.collisionConfig.margin" size="small" class="cm-control"
-          :min="0" :max="50" :step="0.1" :precision="2" controls-position="right" />
+          v-model="urdfStore.collisionConfig.margin"
+          size="small"
+          class="cm-control"
+          :min="0"
+          :max="50"
+          :step="0.1"
+          :precision="2"
+          controls-position="right"
+        />
       </div>
 
       <div class="cm-row">
         <span class="cm-label">最小保留</span>
         <el-slider
-          v-model="minScalePercent" size="small" class="cm-control"
-          :min="10" :max="100" :step="5" :format-tooltip="(v: number) => v + '%'" />
+          v-model="minScalePercent"
+          size="small"
+          class="cm-control"
+          :min="10"
+          :max="100"
+          :step="5"
+          :format-tooltip="(v: number) => v + '%'"
+        />
       </div>
 
       <div class="cm-row">
@@ -34,9 +52,15 @@
         <div class="cm-control cm-inline">
           <el-switch v-model="urdfStore.collisionConfig.sweepCheck" size="small" />
           <el-input-number
-            v-model="urdfStore.collisionConfig.sweepSamples" size="small"
+            v-model="urdfStore.collisionConfig.sweepSamples"
+            size="small"
             :disabled="!urdfStore.collisionConfig.sweepCheck"
-            :min="2" :max="12" :step="1" controls-position="right" style="width: 92px" />
+            :min="2"
+            :max="12"
+            :step="1"
+            controls-position="right"
+            style="width: 92px"
+          />
         </div>
       </div>
 
@@ -51,12 +75,16 @@
     </div>
 
     <el-alert
-      v-if="conflictText" :title="conflictText" type="warning" size="small"
-      :closable="false" show-icon class="cm-alert" />
+      v-if="conflictText"
+      :title="conflictText"
+      type="warning"
+      size="small"
+      :closable="false"
+      show-icon
+      class="cm-alert"
+    />
 
-    <div v-if="!hasShapes" class="cm-empty">
-      尚未生成碰撞体，导出时将直接使用完整网格
-    </div>
+    <div v-if="!hasShapes" class="cm-empty">尚未生成碰撞体，导出时将直接使用完整网格</div>
 
     <div v-else class="cm-list">
       <div v-for="row in rows" :key="row.linkId" class="cm-item">
@@ -66,9 +94,17 @@
           <span class="cm-ratio" :class="{ loose: row.ratio > 2 }">{{ row.ratioText }}</span>
         </div>
         <el-select
-          :model-value="row.mode" size="small" class="cm-item-select"
-          @change="(v: CollisionMode) => handleModeChange(row.linkId, v)">
-          <el-option v-for="opt in COLLISION_SHAPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+          :model-value="row.mode"
+          size="small"
+          class="cm-item-select"
+          @change="(v: CollisionMode) => handleModeChange(row.linkId, v)"
+        >
+          <el-option
+            v-for="opt in COLLISION_SHAPE_OPTIONS"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
         </el-select>
       </div>
     </div>
@@ -76,78 +112,85 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
-import { useURDFStore } from '../../stores/useURDFStore'
-import { COLLISION_SHAPE_OPTIONS } from '../../types'
-import type { CollisionMode } from '../../types'
+import { ref, computed, nextTick } from "vue";
+import { ElMessage } from "element-plus";
+import { useURDFStore } from "../../stores/useURDFStore";
+import { COLLISION_SHAPE_OPTIONS } from "../../types";
+import type { CollisionMode } from "../../types";
 
-const urdfStore = useURDFStore()
-const busy = ref(false)
+const urdfStore = useURDFStore();
+const busy = ref(false);
 
-const hasShapes = computed(() => urdfStore.collisionShapes.length > 0)
+const hasShapes = computed(() => urdfStore.collisionShapes.length > 0);
 
 const minScalePercent = computed({
   get: () => Math.round(urdfStore.collisionConfig.minScale * 100),
-  set: (v: number) => { urdfStore.collisionConfig.minScale = v / 100 }
-})
+  set: (v: number) => {
+    urdfStore.collisionConfig.minScale = v / 100;
+  },
+});
 
 const typeLabel: Record<string, string> = {
-  box: 'Box', cylinder: 'Cylinder', sphere: 'Sphere', convex: 'Convex'
-}
+  box: "Box",
+  cylinder: "Cylinder",
+  sphere: "Sphere",
+  convex: "Convex",
+};
 
-const rows = computed(() => urdfStore.collisionShapes.map(shape => {
-  const ratio = shape.meshVolume > 0 ? shape.shapeVolume / shape.meshVolume : 0
-  return {
-    linkId: shape.linkId,
-    name: `${urdfStore.linkMap.get(shape.linkId)?.name ?? shape.linkId} · ${typeLabel[shape.type]}`,
-    shrunk: shape.shrunk,
-    ratio,
-    ratioText: ratio > 0 ? `${ratio.toFixed(2)}×` : '—',
-    mode: urdfStore.collisionOverrides[shape.linkId] || 'auto'
-  }
-}))
+const rows = computed(() =>
+  urdfStore.collisionShapes.map((shape) => {
+    const ratio = shape.meshVolume > 0 ? shape.shapeVolume / shape.meshVolume : 0;
+    return {
+      linkId: shape.linkId,
+      name: `${urdfStore.linkMap.get(shape.linkId)?.name ?? shape.linkId} · ${typeLabel[shape.type]}`,
+      shrunk: shape.shrunk,
+      ratio,
+      ratioText: ratio > 0 ? `${ratio.toFixed(2)}×` : "—",
+      mode: urdfStore.collisionOverrides[shape.linkId] || "auto",
+    };
+  }),
+);
 
 const conflictText = computed(() => {
-  const list = urdfStore.collisionConflicts
-  if (list.length === 0) return ''
-  const names = list.slice(0, 3).map(c => {
-    const a = urdfStore.linkMap.get(c.linkAId)?.name ?? c.linkAId
-    const b = urdfStore.linkMap.get(c.linkBId)?.name ?? c.linkBId
-    return `${a}↔${b}`
-  })
-  return `${list.length} 处干涉受最小保留比例限制未能完全分离：${names.join('，')}`
-})
+  const list = urdfStore.collisionConflicts;
+  if (list.length === 0) return "";
+  const names = list.slice(0, 3).map((c) => {
+    const a = urdfStore.linkMap.get(c.linkAId)?.name ?? c.linkAId;
+    const b = urdfStore.linkMap.get(c.linkBId)?.name ?? c.linkBId;
+    return `${a}↔${b}`;
+  });
+  return `${list.length} 处干涉受最小保留比例限制未能完全分离：${names.join("，")}`;
+});
 
 async function runGenerate(silent = false): Promise<void> {
-  busy.value = true
-  await nextTick()
-  await new Promise(resolve => setTimeout(resolve, 16))
+  busy.value = true;
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 16));
   try {
-    const result = urdfStore.generateCollisionShapes()
+    const result = urdfStore.generateCollisionShapes();
     if (result.count === 0) {
-      ElMessage.warning('没有可用的连杆几何，请先为 Link 绑定 Solid')
+      ElMessage.warning("没有可用的连杆几何，请先为 Link 绑定 Solid");
     } else if (!silent) {
-      ElMessage.success(`已生成 ${result.count} 个碰撞体`)
+      ElMessage.success(`已生成 ${result.count} 个碰撞体`);
     }
   } catch (err) {
-    ElMessage.error(`碰撞体生成失败: ${(err as Error).message}`)
+    ElMessage.error(`碰撞体生成失败: ${(err as Error).message}`);
   } finally {
-    busy.value = false
+    busy.value = false;
   }
 }
 
 function handleGenerate(): void {
-  void runGenerate()
+  void runGenerate();
 }
 
 function handleClear(): void {
-  urdfStore.clearCollisionShapes()
+  urdfStore.clearCollisionShapes();
 }
 
 function handleModeChange(linkId: string, mode: CollisionMode): void {
-  urdfStore.setLinkCollisionMode(linkId, mode)
-  void runGenerate(true)
+  urdfStore.setLinkCollisionMode(linkId, mode);
+  void runGenerate(true);
 }
 </script>
 
