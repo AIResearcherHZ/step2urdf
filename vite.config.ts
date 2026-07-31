@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -13,7 +14,18 @@ const wasmAsUrl = (): Plugin => ({
   },
 });
 
-const OCCT_NODE_BUILTINS = new Set(["path", "fs", "crypto", "node:path", "node:fs", "node:crypto"]);
+const OCCT_NODE_BUILTINS = new Set([
+  "path",
+  "fs",
+  "crypto",
+  "url",
+  "module",
+  "node:path",
+  "node:fs",
+  "node:crypto",
+  "node:url",
+  "node:module",
+]);
 const OCCT_EMPTY_ID = "\0occt-node-builtin-stub";
 
 const stubOcctNodeBuiltins = (): Plugin => ({
@@ -22,7 +34,7 @@ const stubOcctNodeBuiltins = (): Plugin => ({
   resolveId(source, importer) {
     if (source === OCCT_EMPTY_ID) return OCCT_EMPTY_ID;
     if (!importer || !OCCT_NODE_BUILTINS.has(source)) return null;
-    if (!importer.includes("opencascade.js")) return null;
+    if (!importer.includes("occt-wasm")) return null;
     return OCCT_EMPTY_ID;
   },
   load(id) {
@@ -31,16 +43,32 @@ const stubOcctNodeBuiltins = (): Plugin => ({
   },
 });
 
+const stripOcctSourcemaps = (): Plugin => ({
+  name: "strip-occt-sourcemaps",
+  enforce: "pre",
+  load(id) {
+    const file = id.split("?")[0];
+    if (!file.includes("occt-wasm") || !file.endsWith(".js")) return null;
+    if (!existsSync(file)) return null;
+    const code = readFileSync(file, "utf-8");
+    if (!code.includes("sourceMappingURL")) return null;
+    return {
+      code: code.replace(/^[^\S\r\n]*\/\/# sourceMappingURL=.*$/gm, ""),
+      map: null,
+    };
+  },
+});
+
 export default defineConfig({
-  plugins: [wasmAsUrl(), stubOcctNodeBuiltins(), vue()],
+  plugins: [wasmAsUrl(), stubOcctNodeBuiltins(), stripOcctSourcemaps(), vue()],
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
-    exclude: ["opencascade.js"],
+    exclude: ["occt-wasm"],
     include: ["gl-matrix", "jszip", "comlink"],
   },
   worker: {
     format: "es",
-    plugins: () => [wasmAsUrl(), stubOcctNodeBuiltins()],
+    plugins: () => [wasmAsUrl(), stubOcctNodeBuiltins(), stripOcctSourcemaps()],
   },
   resolve: {
     alias: {
