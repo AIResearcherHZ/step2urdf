@@ -526,6 +526,12 @@ export class SceneManager {
     return takeScreenshot(this.renderer, this.scene, this.camera);
   }
 
+  renderFrame(): void {
+    if (!this.renderer || this.width <= 0 || this.height <= 0) return;
+    this.renderer.setViewport(0, 0, this.width, this.height);
+    this.renderer.render(this.scene, this.camera);
+  }
+
   getDomElement(): HTMLCanvasElement {
     if (!this.renderer) {
       throw new Error("Renderer 尚未初始化，请先调用 await waitForReady()");

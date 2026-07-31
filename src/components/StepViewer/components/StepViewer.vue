@@ -13,6 +13,10 @@
       :is-line-measure-active="store.isLineMeasureActive"
       :opacity="opacityPercent"
       :is-model-tree-open="modelTreeVisible"
+      :project-saving="persistence.saving.value"
+      :autosave-hint="autosaveHint"
+      @open-projects="handleOpenProjects"
+      @save-project="handleSaveProject"
       @upload="handleFileUpload"
       @fit-view="handleFitView"
       @toggle-axes="handleToggleAxes"
@@ -87,6 +91,22 @@
 
     <FloatingJointControl :visible="fkPanelVisible" @close="fkPanelVisible = false" />
 
+    <ProjectManager
+      :visible="projectManagerVisible"
+      :projects="persistence.projects.value"
+      :current-id="persistence.context.value?.id ?? null"
+      :busy="persistence.busy.value"
+      :available="persistence.available.value"
+      :has-current="store.hasModel && !!persistence.context.value"
+      :storage-text="storageText"
+      @close="projectManagerVisible = false"
+      @open="handleOpenProject"
+      @remove="handleRemoveProject"
+      @rename="handleRenameProject"
+      @import="handleImportProject"
+      @export="handleExportProject"
+    />
+
     <JointWizard
       ref="jointWizardRef"
       @created="urdfScene.handleJointCreated"
@@ -130,7 +150,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import * as THREE from "three";
 import Toolbar from "./Toolbar.vue";
 import SidePanel from "./SidePanel.vue";
@@ -141,6 +161,10 @@ import URDFLeftPanel from "./URDFBuilder/URDFLeftPanel.vue";
 import URDFRightPanel from "./URDFBuilder/URDFRightPanel.vue";
 import FloatingJointControl from "./URDFBuilder/FloatingJointControl.vue";
 import JointWizard from "./URDFBuilder/JointWizard.vue";
+import ProjectManager from "./ProjectManager.vue";
+import { useProjectPersistence } from "../persistence/useProjectPersistence";
+import { estimateStorage } from "../persistence/opfs";
+import { ProjectFormatError } from "../persistence/types";
 import { useStepViewerStore } from "../stores/useStepViewerStore";
 import { useURDFStore } from "../stores/useURDFStore";
 import { StepLoader, SceneManager, SelectionManager, preloadOcct, isOcctLoaded } from "../core";
@@ -156,7 +180,12 @@ import {
   type UpAxis,
 } from "../core/ZUpTransform";
 import { useURDFScene } from "./composables/useURDFScene";
-import type { TreeNode, SerializedSolidData } from "../types";
+import type {
+  TreeNode,
+  SerializedSolidData,
+  SerializedTreeNode,
+  CameraConfig,
+} from "../types";
 import { FeatureType, ViewPreset } from "../types";
 
 const props = withDefaults(
@@ -210,6 +239,190 @@ const urdfScene = useURDFScene({
   getSelectionManager: () => selectionManager,
 });
 
+const projectManagerVisible = ref(false);
+const storageText = ref("");
+
+async function applyRestoredScene(
+  solids: SerializedSolidData[],
+  tree: SerializedTreeNode | null,
+): Promise<void> {
+  if (!stepLoader || !sceneManager) throw new Error("渲染器尚未就绪");
+
+  const restored = stepLoader.restoreScene(solids, tree);
+  sceneManager.addModel(restored.group);
+
+  store.setSolids(restored.solids);
+  store.setTreeNodes(restored.treeNodes);
+
+  if (selectionManager) {
+    selectionManager.setSolids(restored.solids);
+    selectionManager.setOpacity(null, store.globalOpacity);
+    store.setTransparent(store.globalOpacity < 1);
+  }
+
+  modelTriangles.value = sceneManager.sceneTriangles;
+  modelVertices.value = sceneManager.sceneVertices;
+
+  await nextTick();
+
+  if (canvasContainerRef.value) {
+    const { clientWidth, clientHeight } = canvasContainerRef.value;
+    if (clientWidth > 0 && clientHeight > 0) {
+      sceneManager.updateSize(clientWidth, clientHeight);
+    }
+  }
+
+  initURDFModules();
+  modelTreeVisible.value = true;
+}
+
+const persistence = useProjectPersistence({
+  getCamera: () => sceneManager?.getCameraConfig() ?? null,
+  setCamera: (config: Partial<CameraConfig>) => sceneManager?.setCameraConfig(config, false),
+  captureThumbnail: async () => {
+    if (!sceneManager) return null;
+    try {
+      sceneManager.renderFrame();
+      const canvas = sceneManager.getDomElement();
+      if (!canvas) return null;
+      return await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), "image/png");
+      });
+    } catch {
+      return null;
+    }
+  },
+  parseStep: async (bytes, fileName) => {
+    if (!stepLoader) throw new Error("解析器尚未就绪");
+    store.setFileName(fileName);
+    const copy = bytes.slice();
+    const result = await stepLoader.parseBuffer(
+      copy.buffer as ArrayBuffer,
+      (progress) => store.updateUploadProgress(progress),
+    );
+    return { solids: result.solids, tree: result.tree };
+  },
+  rebuildScene: applyRestoredScene,
+  clearWorkspace: () => handleClearAll(),
+  onStatus: (message, percent) => {
+    store.updateUploadProgress({
+      status: percent >= 100 ? "success" : "parsing",
+      progress: percent,
+      message,
+    });
+  },
+});
+
+const autosaveHint = computed(() => {
+  if (!persistence.available.value) return "浏览器不支持本地存储，仅可导出 .miles 文件";
+  const ts = persistence.lastSavedAt.value;
+  if (!ts) return "尚未自动保存";
+  return `上次自动保存: ${new Date(ts).toLocaleTimeString()}`;
+});
+
+async function refreshStorageText(): Promise<void> {
+  const estimate = await estimateStorage();
+  if (!estimate) {
+    storageText.value = "";
+    return;
+  }
+  const gb = (n: number) => (n / 1024 ** 3).toFixed(2);
+  storageText.value = `已用 ${gb(estimate.usage)} GB / 可用 ${gb(estimate.available)} GB`;
+}
+
+async function handleOpenProjects(): Promise<void> {
+  projectManagerVisible.value = true;
+  await persistence.refreshList();
+  await refreshStorageText();
+}
+
+async function handleSaveProject(): Promise<void> {
+  if (!persistence.context.value) {
+    ElMessage.warning("请先导入一个 STEP 模型");
+    return;
+  }
+  try {
+    const { value } = await ElMessageBox.prompt("为该项目命名", "保存项目", {
+      inputValue: persistence.context.value.name,
+      inputValidator: (v: string) => (v.trim().length > 0 ? true : "名称不能为空"),
+      confirmButtonText: "保存",
+      cancelButtonText: "取消",
+    });
+    await persistence.saveProject(value.trim());
+    ElMessage.success("项目已保存");
+  } catch (error) {
+    if (error === "cancel" || error === "close") return;
+    ElMessage.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function handleOpenProject(id: string): Promise<void> {
+  projectManagerVisible.value = false;
+  try {
+    await persistence.openProject(id);
+    sceneManager?.fitToModel();
+    ElMessage.success("项目已恢复");
+  } catch (error) {
+    store.updateUploadProgress({ status: "error", progress: 0, message: "项目加载失败" });
+    ElMessage.error(`项目加载失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function handleRemoveProject(id: string): Promise<void> {
+  await persistence.removeProject(id);
+  await refreshStorageText();
+  ElMessage.success("项目已删除");
+}
+
+async function handleRenameProject(id: string, name: string): Promise<void> {
+  await persistence.renameProject(id, name);
+  ElMessage.success("已重命名");
+}
+
+async function handleImportProject(file: File): Promise<void> {
+  projectManagerVisible.value = false;
+  try {
+    await persistence.importProjectFile(file);
+    sceneManager?.fitToModel();
+    ElMessage.success("项目文件已导入");
+  } catch (error) {
+    store.updateUploadProgress({ status: "error", progress: 0, message: "导入失败" });
+    if (error instanceof ProjectFormatError) {
+      ElMessage.error(error.message);
+    } else {
+      ElMessage.error(`导入失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
+async function handleExportProject(): Promise<void> {
+  try {
+    const saved = await persistence.exportProjectFile();
+    if (saved) ElMessage.success("项目文件已导出");
+  } catch (error) {
+    ElMessage.error(`导出失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function promptDraftRecovery(): Promise<void> {
+  const draft = await persistence.detectDraft();
+  if (!draft) return;
+
+  try {
+    await ElMessageBox.confirm(
+      `检测到未保存的会话「${draft.name}」（${draft.sourceFileName}，${new Date(draft.updatedAt).toLocaleString()}），是否恢复？`,
+      "恢复上次会话",
+      { confirmButtonText: "恢复", cancelButtonText: "丢弃", type: "info" },
+    );
+    await handleOpenProject(draft.id);
+  } catch (action) {
+    if (action === "cancel") {
+      await persistence.discardDraft();
+      ElMessage.info("已丢弃上次会话");
+    }
+  }
+}
+
 const jointWizardRef = ref<InstanceType<typeof JointWizard>>();
 const urdfLeftPanelRef = ref<{ setCurrentNodeById: (id: string) => void } | null>(null);
 let isHighlightingFromWatcher = false;
@@ -262,6 +475,7 @@ onMounted(async () => {
       occtLoadProgress.value = 100;
       occtReady.value = true;
       console.log("OpenCASCADE WASM 预加载完成");
+      void persistence.refreshList().then(() => promptDraftRecovery());
     })
     .catch((err) => {
       if (progressTimer) clearInterval(progressTimer);
@@ -547,7 +761,12 @@ async function handleFileUpload(file: File): Promise<void> {
       message: "准备加载...",
     });
 
-    const { solids, group, treeNodes } = await stepLoader.loadFile(file, (progress) => {
+    const {
+      solids,
+      group,
+      treeNodes,
+      tree: serializedTree,
+    } = await stepLoader.loadFile(file, (progress) => {
       if (progress.status === "success") {
         store.updateUploadProgress({
           status: "parsing",
@@ -595,6 +814,24 @@ async function handleFileUpload(file: File): Promise<void> {
     initURDFModules();
     modelTreeVisible.value = true;
     ElMessage.success("模型加载成功");
+
+    void (async () => {
+      try {
+        const ctx = await persistence.beginProject(file);
+        if (!ctx) return;
+        const cached: SerializedSolidData[] = [];
+        for (const solid of store.solids) {
+          if (solid.serializedData) cached.push(solid.serializedData);
+        }
+        if (cached.length > 0) {
+          await persistence.cacheGeometry(cached, serializedTree);
+        }
+        await persistence.flushSave();
+        await persistence.saveThumbnail();
+      } catch (error) {
+        console.warn("项目自动保存初始化失败:", error);
+      }
+    })();
   } catch (error) {
     console.error("加载失败:", error);
     store.updateUploadProgress({

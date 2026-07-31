@@ -26,6 +26,18 @@
             >OpenCASCADE WASM 加载中 ({{ Math.round(occtLoadProgress ?? 0) }}%)</span
           >
         </div>
+        <el-tooltip content="打开已保存的项目 / 导入 .miles 文件" placement="bottom">
+          <el-button :icon="FolderOpened" @click="$emit('openProjects')"> 项目 </el-button>
+        </el-tooltip>
+        <el-tooltip
+          :content="autosaveHint || '保存当前项目'"
+          placement="bottom"
+          v-if="hasModel"
+        >
+          <el-button :icon="Select" :loading="projectSaving" @click="$emit('saveProject')" text>
+            {{ projectSaving ? "保存中" : "保存项目" }}
+          </el-button>
+        </el-tooltip>
         <span v-if="fileName" class="file-name" :title="fileName">{{ fileName }}</span>
       </div>
 
@@ -222,6 +234,8 @@ import {
   Document,
   Close,
   CircleCheckFilled,
+  FolderOpened,
+  Select,
 } from "@element-plus/icons-vue";
 
 const props = defineProps<{
@@ -237,6 +251,8 @@ const props = defineProps<{
   isLineMeasureActive?: boolean;
   isModelTreeOpen?: boolean;
   opacity?: number;
+  projectSaving?: boolean;
+  autosaveHint?: string;
 }>();
 
 const emit = defineEmits<{
@@ -250,6 +266,8 @@ const emit = defineEmits<{
   (e: "toggleStats"): void;
   (e: "toggleLineMeasure"): void;
   (e: "toggleModelTree"): void;
+  (e: "openProjects"): void;
+  (e: "saveProject"): void;
 }>();
 
 const localOpacity = ref(props.opacity ?? 100);

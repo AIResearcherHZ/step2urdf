@@ -255,6 +255,7 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
     globalOpacity,
     isTransparent,
     solidVisibilityMap,
+    modelRotationElements,
 
     hasModel,
     isLoading,

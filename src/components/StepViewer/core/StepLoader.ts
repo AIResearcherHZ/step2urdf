@@ -117,7 +117,12 @@ export class StepLoader {
   async loadFile(
     file: File,
     onProgress?: (progress: UploadProgress) => void,
-  ): Promise<{ solids: SolidObject[]; group: THREE.Group; treeNodes: TreeNode[] }> {
+  ): Promise<{
+    solids: SolidObject[];
+    group: THREE.Group;
+    treeNodes: TreeNode[];
+    tree: SerializedTreeNode;
+  }> {
     onProgress?.({
       status: "uploading",
       progress: 5,
@@ -151,7 +156,7 @@ export class StepLoader {
       message: "加载完成",
     });
 
-    return { solids, group, treeNodes };
+    return { solids, group, treeNodes, tree };
   }
 
   rebuildFromSerialized(serializedSolids: SerializedSolidData[]): {
@@ -159,6 +164,21 @@ export class StepLoader {
     group: THREE.Group;
   } {
     return this.buildScene(serializedSolids);
+  }
+
+  async parseBuffer(
+    fileBuffer: ArrayBuffer,
+    onProgress?: (progress: UploadProgress) => void,
+  ): Promise<{ solids: SerializedSolidData[]; tree: SerializedTreeNode }> {
+    return this.parseInWorker(fileBuffer, onProgress);
+  }
+
+  restoreScene(
+    serializedSolids: SerializedSolidData[],
+    tree: SerializedTreeNode | null,
+  ): { solids: SolidObject[]; group: THREE.Group; treeNodes: TreeNode[] } {
+    const { solids, group } = this.buildScene(serializedSolids);
+    return { solids, group, treeNodes: tree ? this.buildTreeNodes(tree) : [] };
   }
 
   private buildScene(serializedSolids: SerializedSolidData[]): {
