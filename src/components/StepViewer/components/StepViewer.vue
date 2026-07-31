@@ -194,6 +194,9 @@ import { useURDFStore } from "../stores/useURDFStore";
 import { StepLoader, SceneManager, SelectionManager, preloadOcct, isOcctLoaded } from "../core";
 import { LineMeasurementTool } from "../core/LineMeasurementTool";
 import { disposeKinematicsWorker } from "../core/useKinematicsWorker";
+import { disposeInertiaWorker } from "../core/useInertiaWorker";
+import { sumImportedMass } from "../core/InertiaModel";
+import { terminateWorker } from "../core/StepLoader";
 import {
   upAxisToZUpMatrix,
   isIdentityRotation,
@@ -362,6 +365,9 @@ async function handleRobotPackageLoaded(payload: RobotPackagePayload): Promise<v
   });
 
   urdfStore.importRobot(payload.robot);
+
+  const importedMass = sumImportedMass(payload.robot.links);
+  if (importedMass > 0) urdfStore.totalMass = importedMass;
   const bindResult = urdfStore.bindSolidsByLinkNames(
     payload.linkSolidNames,
     store.solids.map((s) => ({ id: s.id, name: s.name })),
@@ -420,7 +426,9 @@ async function runSplit(solidIds: string[]): Promise<void> {
       ElMessage.info("这些实体是单一连通体，无需拆解");
       return;
     }
-    ElMessage.success(`已将 ${solidIds.length} 个实体拆解为 ${total} 个细 Solid`);
+    ElMessage.success(
+      `已将 ${solidIds.length} 个实体拆解为 ${total} 个细 Solid，相关连杆的质心与惯量已同步重算`,
+    );
   } catch (error) {
     store.updateUploadProgress({ status: "error", progress: 0, message: "拆解失败" });
     ElMessage.error(`拆解失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -491,6 +499,11 @@ const persistence = useProjectPersistence({
       progress: percent,
       message,
     });
+  },
+  onInertiaCleared: () => {
+    ElMessage.warning(
+      "该项目保存于惯量坐标系语义变更之前，其惯量数据已被清除，请重新运行「整机惯量计算」",
+    );
   },
 });
 
@@ -997,6 +1010,8 @@ function disposeViewer(): void {
   urdfScene.disposeModules();
   disposeKinematicsWorker();
   disposeMeshImportWorker();
+  disposeInertiaWorker();
+  terminateWorker();
 
   selectionManager?.dispose();
   sceneManager?.dispose();

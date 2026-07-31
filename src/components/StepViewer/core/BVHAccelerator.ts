@@ -40,13 +40,3 @@ export function buildBVH(geometry: THREE.BufferGeometry, options?: MeshBVHOption
     console.warn("BVH 构建失败，将使用默认射线检测:", error);
   }
 }
-
-export function disposeBVH(geometry: THREE.BufferGeometry): void {
-  if ((geometry as any).boundsTree) {
-    (geometry as any).disposeBoundsTree();
-  }
-}
-
-export function hasBVH(geometry: THREE.BufferGeometry): boolean {
-  return !!(geometry as any).boundsTree;
-}

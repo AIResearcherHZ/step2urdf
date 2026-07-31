@@ -56,6 +56,11 @@
         </template>
         <div class="prop-form">
           <div v-for="solidId in link.solidIds" :key="solidId" class="solid-item">
+            <el-checkbox
+              v-if="link.solidIds.length > 1"
+              :model-value="mergeSelection.includes(solidId)"
+              @change="toggleMergeSelection(solidId)"
+            />
             <el-icon>
               <Files />
             </el-icon>
@@ -109,6 +114,17 @@
               @click="handleSplit(link.solidIds.slice())"
             >
               拆解全部
+            </el-button>
+            <el-button
+              v-if="mergeSelection.length >= 2 && geometryEdit"
+              v-hint="'把勾选的 Solid 合并成一个，质量取各自之和，连杆惯量随之重算'"
+              type="warning"
+              plain
+              :icon="Connection"
+              :loading="merging"
+              @click="handleMerge"
+            >
+              合并所选（{{ mergeSelection.length }}）
             </el-button>
           </div>
 
@@ -171,7 +187,7 @@
 import { ref, computed, watch } from "vue";
 import { vHint } from "../composables/useHintBar";
 import { ElMessage } from "element-plus";
-import { Files, Delete, Paperclip, Scissor } from "@element-plus/icons-vue";
+import { Files, Delete, Paperclip, Scissor, Connection } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import { useGeometryEditApi } from "../composables/useGeometryEdit";
@@ -180,6 +196,33 @@ const urdfStore = useURDFStore();
 const stepStore = useStepViewerStore();
 const geometryEdit = useGeometryEditApi();
 const splitting = ref(false);
+const merging = ref(false);
+const mergeSelection = ref<string[]>([]);
+
+function toggleMergeSelection(solidId: string): void {
+  const i = mergeSelection.value.indexOf(solidId);
+  if (i >= 0) mergeSelection.value.splice(i, 1);
+  else mergeSelection.value.push(solidId);
+}
+
+async function handleMerge(): Promise<void> {
+  if (!geometryEdit || merging.value) return;
+  const ids = mergeSelection.value.slice();
+  if (ids.length < 2) return;
+
+  merging.value = true;
+  try {
+    const result = await geometryEdit.mergeSolids(ids);
+    mergeSelection.value = [];
+    const mass = link.value?.solidMasses?.[result.solidId];
+    const massHint = typeof mass === "number" ? `，合并后质量 ${mass.toFixed(4)} kg` : "";
+    ElMessage.success(`已把 ${result.merged} 个 Solid 合并为「${result.name}」${massHint}`);
+  } catch (error) {
+    ElMessage.error(`合并失败: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    merging.value = false;
+  }
+}
 
 async function handleSplit(solidIds: string[]): Promise<void> {
   if (!geometryEdit || solidIds.length === 0 || splitting.value) return;
@@ -191,9 +234,12 @@ async function handleSplit(solidIds: string[]): Promise<void> {
       ElMessage.info("这些实体是单一连通体，无需拆解");
       return;
     }
-    ElMessage.success(
-      `已拆解为 ${total} 个细 Solid，请重新运行「整机惯量计算」以更新质心与惯量`,
-    );
+    mergeSelection.value = [];
+    const inertial = link.value?.inertial;
+    const hint = inertial
+      ? `，质量 ${inertial.mass.toFixed(4)} kg 保持不变，质心与惯量已重算`
+      : "";
+    ElMessage.success(`已拆解为 ${total} 个细 Solid${hint}`);
   } catch (error) {
     ElMessage.error(`拆解失败: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
@@ -207,6 +253,13 @@ const link = computed(() => {
   if (!urdfStore.selectedLinkId) return null;
   return urdfStore.linkMap.get(urdfStore.selectedLinkId) ?? null;
 });
+
+watch(
+  () => urdfStore.selectedLinkId,
+  () => {
+    mergeSelection.value = [];
+  },
+);
 
 function handleUnbind(solidId: string): void {
   if (link.value) urdfStore.unbindSolid(link.value.id, solidId);

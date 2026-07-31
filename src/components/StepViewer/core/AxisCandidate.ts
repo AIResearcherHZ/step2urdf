@@ -275,11 +275,3 @@ export function collectAxisCandidates(options: CollectAxisOptions): AxisCandidat
   const max = options.maxResults ?? 8;
   return candidates.slice(0, max);
 }
-
-export function candidateOriginAt(candidate: AxisCandidate, t: number): [number, number, number] {
-  return [
-    candidate.basePoint[0] + candidate.dir[0] * t,
-    candidate.basePoint[1] + candidate.dir[1] * t,
-    candidate.basePoint[2] + candidate.dir[2] * t,
-  ];
-}

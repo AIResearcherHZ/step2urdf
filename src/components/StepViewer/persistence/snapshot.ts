@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { CameraConfig } from "../types";
+import type { CameraConfig, URDFRobot } from "../types";
 import type { useStepViewerStore } from "../stores/useStepViewerStore";
 import type { useURDFStore } from "../stores/useURDFStore";
 import {
@@ -82,6 +82,7 @@ export function captureSnapshot(
     },
     urdf: {
       robot: JSON.parse(JSON.stringify(urdf.robot)),
+      inertialFrame: "world",
       totalMass: urdf.totalMass,
       exportFormat: urdf.exportFormat,
       baseLinkOrigin: urdf.baseLinkOrigin,
@@ -111,8 +112,20 @@ export function captureSnapshot(
   };
 }
 
-export function applyUrdfSection(urdf: UrdfStore, snapshot: ProjectSnapshot): void {
-  urdf.importRobot(JSON.parse(JSON.stringify(snapshot.urdf.robot)));
+export function applyUrdfSection(urdf: UrdfStore, snapshot: ProjectSnapshot): boolean {
+  const robot: URDFRobot = JSON.parse(JSON.stringify(snapshot.urdf.robot));
+
+  const legacyInertials = snapshot.urdf.inertialFrame !== "world";
+  let cleared = false;
+  if (legacyInertials) {
+    for (const link of robot.links) {
+      if (link.inertial || link.solidMasses) cleared = true;
+      link.inertial = null;
+      if (link.solidMasses) delete link.solidMasses;
+    }
+  }
+
+  urdf.importRobot(robot);
   urdf.totalMass = snapshot.urdf.totalMass;
   urdf.exportFormat = snapshot.urdf.exportFormat;
   urdf.baseLinkOrigin = snapshot.urdf.baseLinkOrigin;
@@ -121,6 +134,7 @@ export function applyUrdfSection(urdf: UrdfStore, snapshot: ProjectSnapshot): vo
   urdf.showFrames = snapshot.urdf.showFrames;
   urdf.collisionConfig = JSON.parse(JSON.stringify(snapshot.collision.config));
   urdf.collisionOverrides = JSON.parse(JSON.stringify(snapshot.collision.overrides));
+  return cleared;
 }
 
 export function applyViewportSection(viewer: ViewerStore, snapshot: ProjectSnapshot): void {

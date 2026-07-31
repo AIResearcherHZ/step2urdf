@@ -129,6 +129,15 @@
             <div class="result-header">
               <span class="result-title">计算结果（共 {{ computedResults.length }} 个连杆）</span>
               <div class="header-actions">
+                <el-tag
+                  v-if="Math.abs(massMismatch) > 1e-6"
+                  size="small"
+                  type="warning"
+                  effect="light"
+                >
+                  合计 {{ computedMassSum.toFixed(3) }} kg，与整机总质量相差
+                  {{ massMismatch > 0 ? "+" : "" }}{{ massMismatch.toFixed(3) }} kg
+                </el-tag>
                 <el-button text type="info" @click="redistributeByVolume">按体积重新分配</el-button>
               </div>
             </div>
@@ -345,7 +354,6 @@ function recalcRow(row: ResultRow): void {
   row.mass = combined.mass;
   row.com = combined.com;
   row.inertia = combined.inertia;
-  syncTotalMass();
 }
 
 function onLinkMassChange(row: ResultRow): void {
@@ -371,9 +379,14 @@ function redistributeByVolume(): void {
   ElMessage.success("已按体积比重新分配质量");
 }
 
-function syncTotalMass(): void {
-  totalMass.value = parseFloat(computedResults.value.reduce((s, r) => s + r.mass, 0).toFixed(6));
-}
+const computedMassSum = computed(() =>
+  computedResults.value.reduce((s, r) => s + r.mass, 0),
+);
+
+const massMismatch = computed(() => {
+  if (computedResults.value.length === 0) return 0;
+  return computedMassSum.value - totalMass.value;
+});
 
 async function runCompute(silent = false): Promise<void> {
   if (computing.value) return;
@@ -385,13 +398,9 @@ async function runCompute(silent = false): Promise<void> {
   let isRerun = computedResults.value.length > 0;
   if (!isRerun) {
     for (const l of urdfStore.robot.links) {
-      if (l.solidMasses) {
-        for (const [sid, m] of Object.entries(l.solidMasses)) {
-          if (m > 0) existingSolidMass.set(sid, m);
-        }
-      } else if (l.inertial && l.inertial.mass > 0 && l.solidIds.length > 0) {
-        const evenMass = l.inertial.mass / l.solidIds.length;
-        for (const sid of l.solidIds) existingSolidMass.set(sid, evenMass);
+      if (!l.solidMasses) continue;
+      for (const [sid, m] of Object.entries(l.solidMasses)) {
+        if (m > 0) existingSolidMass.set(sid, m);
       }
     }
     isRerun = existingSolidMass.size > 0;
@@ -435,8 +444,7 @@ async function runCompute(silent = false): Promise<void> {
     }
 
     computedResults.value = newResults;
-    syncTotalMass();
-
+  
     if (!silent) {
       const hint = isRerun ? "（已保留手动编辑的 Solid 质量）" : "";
       ElMessage.success(`计算完成，共 ${newResults.length} 个连杆 / ${solidCount} 个 Solid${hint}`);

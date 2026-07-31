@@ -65,6 +65,7 @@ export interface PersistenceHost {
   rebuildScene(solids: SerializedSolidData[], tree: SerializedTreeNode | null): Promise<void>;
   clearWorkspace(): void;
   onStatus?: (message: string, percent: number) => void;
+  onInertiaCleared?: () => void;
 }
 
 export interface ProjectContext {
@@ -306,7 +307,7 @@ export function useProjectPersistence(host: PersistenceHost) {
       viewer.setFileName(record.sourceFileName);
       await host.rebuildScene(solids, tree);
 
-      applyUrdfSection(urdf, snapshot);
+      if (applyUrdfSection(urdf, snapshot)) host.onInertiaCleared?.();
       applyViewportSection(viewer, snapshot);
 
       const camera = fromCameraSection(snapshot.viewport.camera);
@@ -350,7 +351,7 @@ export function useProjectPersistence(host: PersistenceHost) {
       viewer.setFileName(snapshot.manifest.sourceFileName);
       await host.rebuildScene(parsed.solids, parsed.tree);
 
-      applyUrdfSection(urdf, snapshot);
+      if (applyUrdfSection(urdf, snapshot)) host.onInertiaCleared?.();
       applyViewportSection(viewer, snapshot);
 
       const camera = fromCameraSection(snapshot.viewport.camera);

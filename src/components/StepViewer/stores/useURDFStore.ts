@@ -27,7 +27,10 @@ import {
   clearRobotBindings,
   remapRobotSolidIds,
   type AutoBindResult,
+  type RemapOptions,
+  type RemapResult,
 } from "../core/RobotImport";
+import { renormalizeAfterRemoval } from "../core/InertiaModel";
 import { useStepViewerStore } from "./useStepViewerStore";
 
 const BASE_LINK_ID = "link_base";
@@ -226,16 +229,31 @@ export const useURDFStore = defineStore("urdf", () => {
 
   function bindSolid(linkId: string, solidId: string): void {
     const link = linkMap.value.get(linkId);
-    if (link && !link.solidIds.includes(solidId)) {
-      link.solidIds.push(solidId);
-    }
+    if (!link || link.solidIds.includes(solidId)) return;
+
+    link.solidIds.push(solidId);
+    link.inertial = null;
+    if (link.solidMasses) delete link.solidMasses;
   }
 
   function unbindSolid(linkId: string, solidId: string): void {
     const link = linkMap.value.get(linkId);
-    if (link) {
-      link.solidIds = link.solidIds.filter((id) => id !== solidId);
-      if (link.solidMasses) delete link.solidMasses[solidId];
+    if (!link) return;
+
+    const previousMass = link.inertial?.mass ?? 0;
+    const renormalized = renormalizeAfterRemoval(link, solidId, previousMass);
+
+    link.solidIds = link.solidIds.filter((id) => id !== solidId);
+    if (link.solidMasses) delete link.solidMasses[solidId];
+
+    if (renormalized) {
+      if (Object.keys(renormalized).length > 0) link.solidMasses = renormalized;
+      else {
+        delete link.solidMasses;
+        link.inertial = null;
+      }
+    } else if (link.solidIds.length === 0) {
+      link.inertial = null;
     }
   }
 
@@ -442,10 +460,11 @@ export const useURDFStore = defineStore("urdf", () => {
     collisionConflicts.value = [];
   }
 
-  function remapSolidIds(mapping: Map<string, string[]>): void {
-    remapRobotSolidIds(robot.value, mapping);
+  function remapSolidIds(mapping: Map<string, string[]>, options?: RemapOptions): RemapResult {
+    const result = remapRobotSolidIds(robot.value, mapping, options);
     collisionShapes.value = [];
     collisionConflicts.value = [];
+    return result;
   }
 
   function bindSolidsByName(solids: { id: string; name: string }[]): AutoBindResult {

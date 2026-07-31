@@ -85,6 +85,7 @@ import {
   ROBOT_UNIT_SCALES,
   type RobotImportReport,
 } from "../../core/RobotImport";
+import { sumImportedMass } from "../../core/InertiaModel";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 
@@ -146,6 +147,9 @@ function applyImport(): void {
   const robot = JSON.parse(JSON.stringify(report.value.robot));
   ensureBaseLink(robot);
   urdfStore.importRobot(robot);
+
+  const imported = sumImportedMass(robot.links);
+  if (imported > 0) urdfStore.totalMass = imported;
 
   let boundInfo = "";
   if (autoBind.value && stepStore.hasModel) {

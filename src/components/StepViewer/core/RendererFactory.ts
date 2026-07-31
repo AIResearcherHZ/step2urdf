@@ -89,10 +89,6 @@ export async function createRenderer(
   return { renderer: webglRenderer, type: "webgl" };
 }
 
-export function isWebGPURenderer(renderer: UniversalRenderer): boolean {
-  return renderer && !("extensions" in renderer);
-}
-
 export function configureRenderer(
   renderer: UniversalRenderer,
   type: RendererType,

@@ -24,6 +24,7 @@ export interface ProjectManifest {
 
 export interface UrdfSection {
   robot: URDFRobot;
+  inertialFrame?: "world";
   totalMass: number;
   exportFormat: ExportFormat;
   baseLinkOrigin: [number, number, number] | null;

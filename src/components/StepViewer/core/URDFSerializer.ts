@@ -263,10 +263,6 @@ export interface RobotParseResult {
   warnings: string[];
 }
 
-export function deserializeURDF(xml: string, options?: URDFParseOptions): URDFRobot {
-  return parseURDF(xml, options).robot;
-}
-
 export function parseURDF(xml: string, options?: URDFParseOptions): RobotParseResult {
   const s = options?.unitScale ?? 1;
   const warnings: string[] = [];

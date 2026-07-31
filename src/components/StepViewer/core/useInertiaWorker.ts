@@ -38,14 +38,6 @@ function toPlainSolidData(solidDataList: SerializedSolidData[]): SerializedSolid
   }));
 }
 
-export async function computeLinkInertia(
-  solidDataList: SerializedSolidData[],
-  density: number,
-): Promise<InertialParams> {
-  const proxy = await getProxy();
-  return proxy.computeInertia(toPlainSolidData(solidDataList), density);
-}
-
 export async function computePerSolidInertia(
   solidDataList: SerializedSolidData[],
 ): Promise<SolidInertiaResult[]> {
@@ -86,22 +78,6 @@ export function combineSolidInertia(entries: SolidMassEntry[]): InertialParams {
   }
 
   return { mass, com, inertia };
-}
-
-export async function computeRefInertias(
-  links: { linkId: string; solidDataList: SerializedSolidData[] }[],
-): Promise<Map<string, InertialParams>> {
-  const validLinks = links.filter((l) => l.solidDataList.length > 0);
-  if (validLinks.length === 0) return new Map();
-
-  const result = new Map<string, InertialParams>();
-  for (const l of validLinks) {
-    try {
-      const r = await computeLinkInertia(l.solidDataList, 1);
-      if (r.mass > 0) result.set(l.linkId, r);
-    } catch {}
-  }
-  return result;
 }
 
 export function disposeInertiaWorker(): void {

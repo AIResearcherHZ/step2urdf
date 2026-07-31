@@ -224,23 +224,6 @@ export const workerApi = {
     return;
   },
 
-  async computeInertia(
-    solidDataList: SerializedSolidData[],
-    density: number,
-  ): Promise<InertialParams> {
-    const parts: Contribution[] = [];
-    for (const data of solidDataList) {
-      const props = solidMassProps(data);
-      if (!props) continue;
-      parts.push({
-        mass: props.volume * 1e-9 * density,
-        com: props.com,
-        scaledInertiaAtCom: scaleInertia(props.inertiaAtCom, density),
-      });
-    }
-    return combine(parts);
-  },
-
   async computePerSolidInertia(
     solidDataList: SerializedSolidData[],
   ): Promise<SolidInertiaResult[]> {

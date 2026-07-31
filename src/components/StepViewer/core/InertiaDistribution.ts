@@ -58,12 +58,33 @@ export async function distributeInertia(
   }
   if (totalVolume <= 0) return [];
 
+  let pinnedMass = 0;
+  let unpinnedVolume = 0;
+  for (const entries of perLink.values()) {
+    for (const e of entries) {
+      const fixed = fixedSolidMass?.get(e.solidId);
+      if (fixed !== undefined && fixed > 0) pinnedMass += fixed;
+      else unpinnedVolume += e.volume;
+    }
+  }
+
+  const residual = totalMass - pinnedMass;
+  if (residual < 0) {
+    throw new Error(
+      `锁定的 Solid 质量合计 ${pinnedMass.toFixed(3)} kg 已超过整机总质量 ${totalMass.toFixed(3)} kg`,
+    );
+  }
+
   const nameOf = new Map(valid.map((i) => [i.linkId, i.name]));
   const out: LinkInertiaResult[] = [];
   for (const [linkId, entries] of perLink) {
     for (const e of entries) {
       const fixed = fixedSolidMass?.get(e.solidId);
-      e.mass = fixed !== undefined && fixed > 0 ? fixed : (e.volume / totalVolume) * totalMass;
+      if (fixed !== undefined && fixed > 0) {
+        e.mass = fixed;
+      } else {
+        e.mass = unpinnedVolume > 0 ? (e.volume / unpinnedVolume) * residual : 0;
+      }
     }
     const combined = combineSolidInertia(entries);
     out.push({

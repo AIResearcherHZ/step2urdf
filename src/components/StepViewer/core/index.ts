@@ -7,7 +7,7 @@ export { ForwardKinematics } from "./ForwardKinematics";
 export { JointSnapVisualizer } from "./JointSnapVisualizer";
 export { CollisionVisualizer } from "./CollisionVisualizer";
 export { fitLinkShape, separateShapes, shapeLocalMatrix } from "./CollisionSimplifier";
-export { serializeURDF, deserializeURDF, parseURDF } from "./URDFSerializer";
+export { serializeURDF, parseURDF } from "./URDFSerializer";
 export { parseMJCF } from "./MJCFParser";
 export {
   parseRobotText,
@@ -34,11 +34,10 @@ export {
   MESH_UNIT_SCALES,
 } from "./useMeshImportWorker";
 export { buildAxisFrame, flipAxisFrame, frameToArray, flipRPY } from "./AxisFrame";
-export { collectAxisCandidates, candidateOriginAt } from "./AxisCandidate";
+export { collectAxisCandidates } from "./AxisCandidate";
 export {
   createRenderer,
   isWebGPUAvailable,
-  isWebGPURenderer,
   configureRenderer,
   takeScreenshot,
 } from "./RendererFactory";

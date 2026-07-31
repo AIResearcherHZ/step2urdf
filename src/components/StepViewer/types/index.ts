@@ -223,43 +223,6 @@ export type WorkerResponse =
   | { type: "result"; solids: SerializedSolidData[]; tree: SerializedTreeNode; success: boolean }
   | { type: "error"; message: string };
 
-export type ViewerEventType =
-  | "load"
-  | "loadProgress"
-  | "loadError"
-  | "select"
-  | "deselect"
-  | "hover"
-  | "measure"
-  | "viewChange";
-
-export interface ViewerEventHandlers {
-  onLoad?: () => void;
-  onLoadProgress?: (progress: UploadProgress) => void;
-  onLoadError?: (error: Error) => void;
-  onSelect?: (selections: SelectionInfo[]) => void;
-  onDeselect?: () => void;
-  onHover?: (feature?: GeometryFeature) => void;
-  onViewChange?: (camera: CameraConfig) => void;
-}
-
-export interface StepViewerProps {
-  width?: number | string;
-  height?: number | string;
-  backgroundColor?: number;
-  showAxes?: boolean;
-  showGrid?: boolean;
-  renderConfig?: Partial<RenderConfig>;
-}
-
-export interface ToolbarConfig {
-  showUpload: boolean;
-  showViewControls: boolean;
-  showTransparency: boolean;
-  showMeasurement: boolean;
-  showReset: boolean;
-}
-
 export type JointType =
   | "revolute"
   | "continuous"
@@ -278,10 +241,6 @@ export const JOINT_TYPE_OPTIONS: { value: JointType; label: string }[] = [
   { value: "floating", label: "Floating（自由）" },
   { value: "fixed", label: "Fixed（固定）" },
 ];
-
-export function isMultiDofJoint(type: JointType): boolean {
-  return type === "ball" || type === "floating" || type === "planar";
-}
 
 export function isLimitedJoint(type: JointType): boolean {
   return type === "revolute" || type === "prismatic" || type === "ball";
@@ -439,19 +398,6 @@ export interface BindingModeState {
   targetLinkId: string | null;
 }
 
-export interface InertiaWorkerRequest {
-  type: "compute";
-  linkId: string;
-  solidDataList: SerializedSolidData[];
-  density: number;
-}
-
-export interface InertiaWorkerResponse {
-  type: "result";
-  linkId: string;
-  inertial: InertialParams;
-}
-
 export interface SnapData {
   position: [number, number, number];
   normal: [number, number, number];
@@ -461,12 +407,6 @@ export interface SnapData {
     y: [number, number, number];
     z: [number, number, number];
   };
-}
-
-export interface KinematicsInput {
-  parentWorldMatrix: Float32Array;
-  snapPosition: Float32Array;
-  snapNormal: Float32Array;
 }
 
 export interface KinematicsResult {

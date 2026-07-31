@@ -2,6 +2,8 @@ import type {
   SerializedSolidData,
   FaceGroupInfo,
   FaceGeometryData,
+  EdgeGroupInfo,
+  EdgeGeometryData,
   SerializedTreeNode,
   TreeNodeType,
 } from "../types";
@@ -669,5 +671,92 @@ export function buildFlatTree(
       type: "solid" as TreeNodeType,
       solidIndex: index,
     })),
+  };
+}
+
+export function mergeSolidData(
+  parts: SerializedSolidData[],
+  name: string,
+  color?: number[],
+): SerializedSolidData {
+  if (parts.length === 1) return { ...parts[0], name, color: color ?? parts[0].color };
+
+  let vertexTotal = 0;
+  let indexTotal = 0;
+  let polylineTotal = 0;
+  for (const p of parts) {
+    vertexTotal += p.positions.length;
+    indexTotal += p.indices.length;
+    polylineTotal += p.edgePolylines?.length ?? 0;
+  }
+
+  const positions = new Float32Array(vertexTotal);
+  const normals = new Float32Array(vertexTotal);
+  const indices = new Uint32Array(indexTotal);
+  const edgePolylines = new Float32Array(polylineTotal);
+
+  const faceGroups: FaceGroupInfo[] = [];
+  const faceGeometries: FaceGeometryData[] = [];
+  const edgeGroups: EdgeGroupInfo[] = [];
+  const edgeGeometries: EdgeGeometryData[] = [];
+
+  let vOffset = 0;
+  let iOffset = 0;
+  let pOffset = 0;
+  let faceOffset = 0;
+  let edgeOffset = 0;
+
+  for (const part of parts) {
+    positions.set(part.positions, vOffset);
+    if (part.normals && part.normals.length === part.positions.length) {
+      normals.set(part.normals, vOffset);
+    }
+
+    const vertexBase = vOffset / 3;
+    for (let i = 0; i < part.indices.length; i++) {
+      indices[iOffset + i] = part.indices[i] + vertexBase;
+    }
+
+    for (const g of part.faceGroups) {
+      faceGroups.push({
+        start: g.start + iOffset,
+        count: g.count,
+        faceIndex: g.faceIndex + faceOffset,
+      });
+    }
+    faceGeometries.push(...part.faceGeometries);
+
+    if (part.edgePolylines && part.edgePolylines.length > 0) {
+      edgePolylines.set(part.edgePolylines, pOffset);
+    }
+    const polylineBase = pOffset / 3;
+    for (const g of part.edgeGroups) {
+      edgeGroups.push({
+        edgeIndex: g.edgeIndex + edgeOffset,
+        polylineStart: g.polylineStart + polylineBase,
+        polylineCount: g.polylineCount,
+        adjacentFaceIndices: g.adjacentFaceIndices.map((f) => f + faceOffset),
+      });
+    }
+    edgeGeometries.push(...part.edgeGeometries);
+
+    vOffset += part.positions.length;
+    iOffset += part.indices.length;
+    pOffset += part.edgePolylines?.length ?? 0;
+    faceOffset += part.faceGeometries.length;
+    edgeOffset += part.edgeGeometries.length;
+  }
+
+  return {
+    name,
+    color: color ?? parts[0].color,
+    positions,
+    normals,
+    indices,
+    faceGroups,
+    faceGeometries,
+    edgeGroups,
+    edgeGeometries,
+    edgePolylines,
   };
 }

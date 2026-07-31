@@ -1,6 +1,9 @@
 import type { URDFRobot } from "../types";
 import { parseURDF, type RobotParseResult, type URDFParseOptions } from "./URDFSerializer";
 import { parseMJCF } from "./MJCFParser";
+import { ForwardKinematics } from "./ForwardKinematics";
+import { rotateInertialParams } from "./ZUpTransform";
+import { apportionByVolume } from "./InertiaModel";
 
 export type RobotFileFormat = "urdf" | "mjcf";
 
@@ -26,12 +29,31 @@ export function detectRobotFormat(text: string): RobotFileFormat | null {
   return null;
 }
 
+export function normalizeInertialsToWorld(robot: URDFRobot): number {
+  const withInertial = robot.links.filter((l) => l.inertial);
+  if (withInertial.length === 0) return 0;
+
+  const fk = new ForwardKinematics();
+  fk.setRobot(robot);
+
+  let count = 0;
+  for (const link of withInertial) {
+    const rest = fk.getLinkRestTransform(link.id);
+    if (!rest) continue;
+    link.inertial = rotateInertialParams(link.inertial!, rest);
+    count++;
+  }
+  fk.dispose();
+  return count;
+}
+
 export function parseRobotText(text: string, options?: URDFParseOptions): RobotImportReport {
   const format = detectRobotFormat(text);
   if (!format) {
     throw new Error("无法识别文件格式，需要包含 <robot>（URDF）或 <mujoco>（MJCF）根元素");
   }
   const result = format === "mjcf" ? parseMJCF(text, options) : parseURDF(text, options);
+  normalizeInertialsToWorld(result.robot);
   return { ...result, format };
 }
 
@@ -172,30 +194,67 @@ export function bindSolidsByLinkMap(
 export function clearRobotBindings(robot: URDFRobot): void {
   for (const link of robot.links) {
     link.solidIds = [];
+    link.inertial = null;
     if (link.solidMasses) delete link.solidMasses;
   }
 }
 
-export function remapRobotSolidIds(robot: URDFRobot, mapping: Map<string, string[]>): void {
+export interface RemapOptions {
+  volumeById?: Map<string, number>;
+}
+
+export interface RemapResult {
+  changedLinkIds: string[];
+}
+
+export function remapRobotSolidIds(
+  robot: URDFRobot,
+  mapping: Map<string, string[]>,
+  options?: RemapOptions,
+): RemapResult {
+  const changedLinkIds: string[] = [];
+
   for (const link of robot.links) {
     const nextIds: string[] = [];
     const nextMasses: Record<string, number> = {};
     const previousMasses = link.solidMasses ?? {};
+    let restructured = false;
 
     for (const oldId of link.solidIds) {
       const replacements = mapping.get(oldId);
       const targets = replacements ?? [oldId];
-      const keepMass = !replacements || (replacements.length === 1 && replacements[0] === oldId);
       const previous = previousMasses[oldId];
+      const hasPrevious = typeof previous === "number" && previous > 0;
+
+      if (targets.length > 1) {
+        restructured = true;
+        if (hasPrevious) {
+          const volumes = targets.map((id) => ({
+            solidId: id,
+            volume: options?.volumeById?.get(id) ?? 0,
+          }));
+          const shares = apportionByVolume(volumes, previous);
+          for (const id of targets) {
+            if (!nextIds.includes(id)) nextIds.push(id);
+            if (shares[id] > 0) nextMasses[id] = (nextMasses[id] ?? 0) + shares[id];
+          }
+          continue;
+        }
+      }
+
       for (const id of targets) {
-        if (nextIds.includes(id)) continue;
-        nextIds.push(id);
-        if (keepMass && typeof previous === "number" && previous > 0) nextMasses[id] = previous;
+        if (nextIds.includes(id)) restructured = true;
+        else nextIds.push(id);
+        if (hasPrevious) nextMasses[id] = (nextMasses[id] ?? 0) + previous;
       }
     }
 
     link.solidIds = nextIds;
     if (Object.keys(nextMasses).length > 0) link.solidMasses = nextMasses;
     else if (link.solidMasses) delete link.solidMasses;
+
+    if (restructured) changedLinkIds.push(link.id);
   }
+
+  return { changedLinkIds };
 }

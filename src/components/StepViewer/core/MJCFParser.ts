@@ -8,6 +8,7 @@ import type {
   InertialParams,
 } from "../types";
 import type { RobotParseResult, URDFParseOptions } from "./URDFSerializer";
+import { rotateInertiaTensor } from "./ZUpTransform";
 
 interface ParseContext {
   scale: number;
@@ -277,41 +278,55 @@ function readInertial(bodyEl: Element, ctx: ParseContext): InertialParams | null
   const diag = el.getAttribute("diaginertia");
   if (diag) {
     const v = diag.trim().split(/\s+/).map(Number);
-    return { mass, com, inertia: [v[0] || 0, 0, 0, v[1] || 0, 0, v[2] || 0] };
+    const principal: [number, number, number, number, number, number] = [
+      v[0] || 0,
+      0,
+      0,
+      v[1] || 0,
+      0,
+      v[2] || 0,
+    ];
+    const frame = readOrientation(el, ctx);
+    return { mass, com, inertia: frame ? rotateInertiaTensor(principal, frame) : principal };
   }
 
   return { mass, com, inertia: [0, 0, 0, 0, 0, 0] };
 }
 
-function bodyLocalMatrix(bodyEl: Element, ctx: ParseContext): THREE.Matrix4 {
-  const pos = readVec3(bodyEl.getAttribute("pos") || "0 0 0");
-  const matrix = new THREE.Matrix4();
+function readOrientation(el: Element, ctx: ParseContext): THREE.Matrix4 | null {
+  const quatAttr = el.getAttribute("quat");
+  const eulerAttr = el.getAttribute("euler");
+  const axisAngleAttr = el.getAttribute("axisangle");
 
-  const quatAttr = bodyEl.getAttribute("quat");
-  const eulerAttr = bodyEl.getAttribute("euler");
-  const axisAngleAttr = bodyEl.getAttribute("axisangle");
+  const matrix = new THREE.Matrix4();
 
   if (quatAttr) {
     const q = quatAttr.trim().split(/\s+/).map(Number);
     matrix.makeRotationFromQuaternion(
       new THREE.Quaternion(q[1] || 0, q[2] || 0, q[3] || 0, q[0] ?? 1).normalize(),
     );
-  } else if (eulerAttr) {
+    return matrix;
+  }
+  if (eulerAttr) {
     const e = readVec3(eulerAttr);
     matrix.makeRotationFromEuler(
-      new THREE.Euler(
-        e[0] * ctx.angleScale,
-        e[1] * ctx.angleScale,
-        e[2] * ctx.angleScale,
-        "XYZ",
-      ),
+      new THREE.Euler(e[0] * ctx.angleScale, e[1] * ctx.angleScale, e[2] * ctx.angleScale, "XYZ"),
     );
-  } else if (axisAngleAttr) {
+    return matrix;
+  }
+  if (axisAngleAttr) {
     const v = axisAngleAttr.trim().split(/\s+/).map(Number);
     const axis = new THREE.Vector3(v[0] || 0, v[1] || 0, v[2] || 1).normalize();
     matrix.makeRotationAxis(axis, (v[3] || 0) * ctx.angleScale);
+    return matrix;
   }
 
+  return null;
+}
+
+function bodyLocalMatrix(bodyEl: Element, ctx: ParseContext): THREE.Matrix4 {
+  const pos = readVec3(bodyEl.getAttribute("pos") || "0 0 0");
+  const matrix = readOrientation(bodyEl, ctx) ?? new THREE.Matrix4();
   matrix.setPosition(pos[0] * ctx.scale, pos[1] * ctx.scale, pos[2] * ctx.scale);
   return matrix;
 }
