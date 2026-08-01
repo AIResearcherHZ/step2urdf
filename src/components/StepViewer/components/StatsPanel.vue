@@ -145,7 +145,7 @@ onUnmounted(() => {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   min-width: 100px;
-  z-index: 100;
+  z-index: var(--z-canvas-hud);
   pointer-events: none;
   user-select: none;
 }

@@ -54,9 +54,7 @@ async function walkEntry(
     if (!isUseful(path)) return;
     try {
       out.push({ path, file: await entryFile(entry) });
-    } catch {
-      /* 单个文件读取失败时跳过 */
-    }
+    } catch {}
     return;
   }
 

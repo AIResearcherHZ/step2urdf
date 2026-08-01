@@ -4,9 +4,10 @@
       <div
         v-show="visible"
         class="measure-panel"
-        :style="{ left: pos.x + 'px', top: pos.y + 'px' }"
+        ref="panelRef"
+        @pointerdown="bringToFront"
       >
-        <div class="panel-header" @mousedown="startDrag">
+        <div class="panel-header" ref="handleRef">
           <span class="panel-title">📏 测量列表</span>
           <span class="panel-count" v-if="store.lineMeasurements.length">
             {{ store.lineMeasurements.length }} 条
@@ -67,13 +68,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from "vue";
+import { toRef } from "vue";
 import * as THREE from "three";
 import { useStepViewerStore } from "../stores/useStepViewerStore";
+import { useFloatingPanel } from "./composables/useFloatingPanel";
 
 const store = useStepViewerStore();
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
 }>();
 
@@ -83,7 +85,10 @@ const emit = defineEmits<{
   (e: "clearAll"): void;
 }>();
 
-const pos = reactive({ x: 340, y: 80 });
+const { panelRef, handleRef, bringToFront } = useFloatingPanel({
+  visible: toRef(props, "visible"),
+  initial: () => ({ x: 340, y: 80 }),
+});
 
 function formatDistance(mm: number): string {
   if (mm >= 1000) return `${(mm / 1000).toFixed(3)} m`;
@@ -102,25 +107,6 @@ function handleRemove(id: string): void {
 function handleClearAll(): void {
   emit("clearAll");
 }
-
-function startDrag(e: MouseEvent): void {
-  if ((e.target as HTMLElement).closest("button, .el-button")) return;
-  e.preventDefault();
-  const startX = e.clientX - pos.x;
-  const startY = e.clientY - pos.y;
-  const onMove = (ev: MouseEvent) => {
-    pos.x = Math.max(0, ev.clientX - startX);
-    pos.y = Math.max(0, ev.clientY - startY);
-  };
-  const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    document.body.style.userSelect = "";
-  };
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
-}
 </script>
 
 <style scoped lang="scss">
@@ -134,7 +120,6 @@ function startDrag(e: MouseEvent): void {
   border: 1px solid var(--panel-edge);
   border-radius: var(--radius-md);
   box-shadow: 0 20px 56px rgba(0, 0, 0, 0.38);
-  z-index: 1000;
   overflow: hidden;
 }
 
@@ -148,6 +133,7 @@ function startDrag(e: MouseEvent): void {
   flex-shrink: 0;
   cursor: move;
   user-select: none;
+  touch-action: none;
 
   .panel-title {
     flex: 1;

@@ -1,6 +1,7 @@
 <template>
   <div class="step-viewer" ref="viewerRef">
     <Toolbar
+      ref="toolbarRef"
       :file-name="store.currentFileName"
       :is-loading="store.isLoading"
       :has-model="store.hasModel"
@@ -48,6 +49,7 @@
         @toggle-solid-visibility="handleToggleSolidVisibility"
         @split-solid="handleSplitSolid"
         @rename-solid="handleRenameSolid"
+        @merge-solids="handleMergeSolids"
         @close="modelTreeVisible = false"
       />
 
@@ -67,6 +69,36 @@
           ref="statsPanelRef"
         />
 
+        <Transition name="empty-state">
+          <div class="empty-state" v-if="!store.hasModel && !store.isLoading">
+            <div class="empty-card">
+              <div class="empty-icon"><UploadFilled /></div>
+              <h2 class="empty-title">从一个模型开始</h2>
+              <p class="empty-desc">
+                导入 STEP / STP / STL 几何，或直接载入已有的 URDF / MJCF 结构与机器人包
+              </p>
+              <div class="empty-actions">
+                <el-button
+                  type="primary"
+                  :icon="UploadFilled"
+                  :disabled="store.isLoading"
+                  @click="toolbarRef?.openUploadDialog()"
+                >
+                  导入模型
+                </el-button>
+                <el-button :icon="Share" @click="robotImportVisible = true">导入结构</el-button>
+                <el-button :icon="FolderAdd" @click="robotPackageVisible = true">
+                  导入机器人包
+                </el-button>
+              </div>
+              <p class="empty-note" v-if="!occtReady">
+                OpenCASCADE 引擎加载中 {{ Math.round(occtLoadProgress ?? 0) }}% — STL
+                与结构导入无需等待
+              </p>
+            </div>
+          </div>
+        </Transition>
+
         <LoadingOverlay
           :visible="store.isLoading"
           :progress="store.uploadProgress.progress"
@@ -75,18 +107,31 @@
           :file-name="store.currentFileName"
         />
 
-        <div class="binding-overlay" v-if="urdfStore.bindingMode.active">
-          <el-tag type="warning" effect="light">
-            点击 3D 场景中的 Solid 绑定到 Link（已属其他 Link 会自动改绑，再次点击可解绑）
-            <el-button size="small" text @click="urdfStore.stopBindingMode()">完成</el-button>
-          </el-tag>
-        </div>
+        <TransitionGroup name="overlay-item" tag="div" class="overlay-stack">
+          <div class="overlay-pill" v-if="urdfStore.bindingMode.active" key="binding">
+            <el-tag type="warning" effect="light">
+              点击 3D 场景中的 Solid 绑定到 Link（已属其他 Link 会自动改绑，再次点击可解绑）
+              <el-button size="small" text @click="urdfStore.stopBindingMode()">完成</el-button>
+            </el-tag>
+          </div>
 
-        <div class="binding-overlay" v-if="urdfStore.exporting">
-          <el-tag type="info" effect="light">
-            {{ urdfStore.exportProgress || "正在导出..." }}
-          </el-tag>
-        </div>
+          <div class="overlay-pill" v-if="urdfStore.exporting" key="exporting">
+            <el-tag type="info" effect="light">
+              {{ urdfStore.exportProgress || "正在导出..." }}
+            </el-tag>
+          </div>
+
+          <div
+            class="overlay-pill"
+            v-if="!urdfStore.bindingMode.active && selectedSolidIds.length >= 2"
+            key="merge"
+          >
+            <el-tag type="warning" effect="light">
+              已选中 {{ selectedSolidIds.length }} 个 Solid
+              <el-button size="small" text @click="handleClearSelection">取消选择</el-button>
+            </el-tag>
+          </div>
+        </TransitionGroup>
       </div>
 
       <URDFRightPanel v-if="store.hasModel" @toggle-f-k-panel="handleToggleFKPanel" />
@@ -173,9 +218,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { confirmDialog, isDialogDismissed, promptDialog } from "../utils/dialog";
+import { ElMessage } from "element-plus";
 import * as THREE from "three";
 import Toolbar from "./Toolbar.vue";
+import UploadFilled from "~icons/ep/upload-filled";
+import Share from "~icons/ep/share";
+import FolderAdd from "~icons/ep/folder-add";
 import SidePanel from "./SidePanel.vue";
 import MeasurementPanel from "./MeasurementPanel.vue";
 import StatsPanel from "./StatsPanel.vue";
@@ -249,6 +298,7 @@ const { hint } = useHintBar();
 const viewerRef = ref<HTMLElement>();
 const canvasContainerRef = ref<HTMLElement>();
 const statsPanelRef = ref<InstanceType<typeof StatsPanel>>();
+const toolbarRef = ref<InstanceType<typeof Toolbar>>();
 
 const showStats = ref(props.showStatsPanel);
 
@@ -296,6 +346,7 @@ const geometryEdit = useGeometryEdit({
   getSelectionManager: () => selectionManager,
   disposeUrdfModules: () => urdfScene.disposeModules(),
   initUrdfModules: () => urdfScene.initModules(),
+  getCurrentTree: () => currentTree,
   onGeometryChanged: (solids, tree) => {
     currentTree = tree;
     modelTriangles.value = sceneManager?.sceneTriangles ?? 0;
@@ -399,38 +450,32 @@ async function handleRobotPackageLoaded(payload: RobotPackagePayload): Promise<v
 
 async function handleRenameSolid(solidId: string): Promise<void> {
   const solid = store.solidMap.get(solidId);
-  if (!solid) return;
+  if (!solid) {
+    ElMessage.error(`未找到该 Solid（${solidId}），请刷新模型树后重试`);
+    return;
+  }
 
   let value: string;
   try {
-    const result = await ElMessageBox.prompt("输入新的 Solid 名称", "重命名 Solid", {
+    const result = await promptDialog("输入新的 Solid 名称", "重命名 Solid", {
       confirmButtonText: "确定",
       cancelButtonText: "取消",
       inputValue: solid.name,
       inputValidator: (v: string) => (v && v.trim().length > 0 ? true : "名称不能为空"),
     });
     value = result.value;
-  } catch {
+  } catch (error) {
+    if (!isDialogDismissed(error)) {
+      ElMessage.error(`重命名对话框异常：${(error as Error)?.message ?? error}`);
+    }
     return;
   }
 
-  if (!store.renameSolid(solidId, value)) return;
-  const tree = currentTree;
-  if (tree) {
-    const node = findSerializedNode(tree, solidId);
-    if (node) node.name = value.trim();
+  if (!geometryEdit.renameSolid(solidId, value)) {
+    ElMessage.info("名称未变化");
+    return;
   }
-  void persistence.cacheGeometry(geometryEdit.currentSolidData(), currentTree);
   ElMessage.success(`已重命名为「${value.trim()}」`);
-}
-
-function findSerializedNode(node: SerializedTreeNode, nodeId: string): SerializedTreeNode | null {
-  if (node.id === nodeId) return node;
-  for (const child of node.children ?? []) {
-    const hit = findSerializedNode(child, nodeId);
-    if (hit) return hit;
-  }
-  return null;
 }
 
 async function handleSplitSolid(solidId: string): Promise<void> {
@@ -438,7 +483,7 @@ async function handleSplitSolid(solidId: string): Promise<void> {
   if (!solid) return;
 
   try {
-    await ElMessageBox.confirm(
+    await confirmDialog(
       `将把「${solid.name}」按连通面片拆解为多个独立 Solid，拆解后可分别设定密度/质量，从而得到更精确的连杆质心与惯量。`,
       "拆解 Solid",
       { confirmButtonText: "拆解", cancelButtonText: "取消", type: "info" },
@@ -448,6 +493,41 @@ async function handleSplitSolid(solidId: string): Promise<void> {
   }
 
   await runSplit([solidId]);
+}
+
+const selectedSolidIds = computed(() => store.selectedSolidIds);
+
+async function handleMergeSolids(solidIds: string[]): Promise<void> {
+  const names = solidIds.map((id) => store.solidMap.get(id)?.name).filter(Boolean);
+  if (names.length < 2) return;
+
+  let value: string;
+  try {
+    const result = await promptDialog(
+      `将把 ${names.length} 个 Solid（${names.slice(0, 3).join("、")}${names.length > 3 ? " 等" : ""}）合并为一个，质量取各自之和。`,
+      "合并 Solid",
+      {
+        confirmButtonText: "合并",
+        cancelButtonText: "取消",
+        inputValue: names[0] as string,
+        inputPlaceholder: "合并后的名称",
+        inputValidator: (v: string) => (v.trim().length > 0 ? true : "名称不能为空"),
+      },
+    );
+    value = result.value;
+  } catch {
+    return;
+  }
+
+  store.updateUploadProgress({ status: "parsing", progress: 20, message: "正在合并实体..." });
+  try {
+    const result = await geometryEdit.mergeSolids(solidIds, value);
+    store.updateUploadProgress({ status: "success", progress: 100, message: "合并完成" });
+    ElMessage.success(`已把 ${result.merged} 个 Solid 合并为「${result.name}」`);
+  } catch (error) {
+    store.updateUploadProgress({ status: "error", progress: 0, message: "合并失败" });
+    ElMessage.error(`合并失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function runSplit(solidIds: string[]): Promise<void> {
@@ -573,7 +653,7 @@ async function handleSaveProject(): Promise<void> {
     return;
   }
   try {
-    const { value } = await ElMessageBox.prompt("为该项目命名", "保存项目", {
+    const { value } = await promptDialog("为该项目命名", "保存项目", {
       inputValue: persistence.context.value.name,
       inputValidator: (v: string) => (v.trim().length > 0 ? true : "名称不能为空"),
       confirmButtonText: "保存",
@@ -643,7 +723,7 @@ async function handleClearGeometryCache(): Promise<void> {
   }
 
   try {
-    await ElMessageBox.confirm(
+    await confirmDialog(
       `将清理 ${count} 个项目的几何缓存，释放约 ${formatBytes(bytes)}。项目配置和 STEP 原文会保留，下次打开这些项目需要重新解析模型。`,
       "清理几何缓存",
       { type: "warning", confirmButtonText: "清理", cancelButtonText: "取消" },
@@ -662,7 +742,7 @@ async function handleClearAllData(): Promise<void> {
   const estimate = await estimateStorage();
 
   try {
-    await ElMessageBox.confirm(
+    await confirmDialog(
       `将永久删除全部 ${persistence.projects.value.length} 个项目及其模型数据、缩略图${estimate ? `（当前占用 ${formatBytes(estimate.usage)}）` : ""}。此操作不可撤销，未导出为 .miles 文件的项目将无法恢复。`,
       "清空全部项目数据",
       {
@@ -694,7 +774,7 @@ async function handleClearSiteCache(): Promise<void> {
   if (keys > 0) parts.push(`${keys} 条本地设置`);
 
   try {
-    await ElMessageBox.confirm(
+    await confirmDialog(
       `将清除本站的全部本地数据：${parts.join("、")}${usage.totalBytes > 0 ? `，共约 ${formatBytes(usage.totalBytes)}` : ""}。` +
         "此操作不可撤销，未导出为 .miles 文件的项目将无法恢复。清除后页面会自动重新加载。",
       "清除网站全部缓存",
@@ -712,9 +792,9 @@ async function handleClearSiteCache(): Promise<void> {
   projectManagerVisible.value = false;
 
   try {
-    const report = await persistence.resetSite();
-    if (report.failures.length > 0) {
-      ElMessage.warning(`部分数据未能清除: ${report.failures.slice(0, 3).join("、")}`);
+    const failures = await persistence.resetSite();
+    if (failures.length > 0) {
+      ElMessage.warning(`部分数据未能清除: ${failures.slice(0, 3).join("、")}`);
       await new Promise((resolve) => setTimeout(resolve, 1500));
     } else {
       ElMessage.success("缓存已清除，正在重新加载...");
@@ -733,7 +813,7 @@ async function promptDraftRecovery(): Promise<void> {
   if (!draft) return;
 
   try {
-    await ElMessageBox.confirm(
+    await confirmDialog(
       `检测到未保存的会话「${draft.name}」（${draft.sourceFileName}，${new Date(draft.updatedAt).toLocaleString()}），是否恢复？`,
       "恢复上次会话",
       { confirmButtonText: "恢复", cancelButtonText: "丢弃", type: "info" },
@@ -750,10 +830,14 @@ async function promptDraftRecovery(): Promise<void> {
 const jointWizardRef = ref<InstanceType<typeof JointWizard>>();
 const urdfLeftPanelRef = ref<{ setCurrentNodeById: (id: string) => void } | null>(null);
 let isHighlightingFromWatcher = false;
+let lastActivatedSolidId = "";
 
 const hasAnySelection = computed(
   () =>
-    store.selectedFeatures.length > 0 || !!urdfStore.selectedLinkId || !!urdfStore.selectedJointId,
+    store.selectedFeatures.length > 0 ||
+    store.hasTreeSelection ||
+    !!urdfStore.selectedLinkId ||
+    !!urdfStore.selectedJointId,
 );
 
 const effectiveHighlightSolidIds = computed<string[]>(() => {
@@ -955,6 +1039,31 @@ async function initViewer(): Promise<void> {
     sceneManager?.markDirty();
   });
 
+  selectionManager.onSolidActivate((solidId, multi) => {
+    if (!selectionManager) return;
+    if (urdfStore.bindingMode.active) return;
+
+    const linkId = urdfStore.solidLinkMap.get(solidId);
+    const link = linkId ? urdfStore.linkMap.get(linkId) : null;
+    const siblings = link?.solidIds ?? [];
+
+    if (lastActivatedSolidId === solidId && siblings.length > 1) {
+      selectionManager.selectSolids(siblings, multi);
+      lastActivatedSolidId = "";
+      ElMessage.info(`已选中连杆「${link?.name}」的 ${siblings.length} 个 Solid`);
+    } else {
+      selectionManager.selectBySolidId(solidId, multi);
+      lastActivatedSolidId = solidId;
+    }
+
+    if (link) {
+      urdfStore.selectedLinkId = link.id;
+      urdfStore.selectedJointId = null;
+      nextTick(() => urdfLeftPanelRef.value?.setCurrentNodeById(link.id));
+    }
+    sceneManager?.markDirty();
+  });
+
   selectionManager.onHover((feature) => {
     urdfScene.handleHoverSnap(feature);
   });
@@ -1008,6 +1117,12 @@ function handleViewShortcut(e: KeyboardEvent): void {
   }
 
   if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+  if (e.key === "Escape" && hasAnySelection.value) {
+    handleClearSelection();
+    return;
+  }
+
   if (!sceneManager) return;
 
   switch (e.key) {
@@ -1196,22 +1311,16 @@ async function handleFileUpload(file: File, options?: ModelUploadOptions): Promi
 function handleTreeSelect(node: TreeNode, multi: boolean): void {
   if (!selectionManager) return;
 
-  if (node.type === "solid" && node.solidIndex !== undefined) {
-    const solidId = `solid_${node.solidIndex}`;
-    const solid = store.solidMap.get(solidId);
-    if (solid) {
-      store.setFocusedSolid(solid.id);
-      selectionManager.selectBySolidId(solid.id, multi);
+  if (node.type === "solid") {
+    const solidId = store.solidIdOfNode(node);
+    if (solidId) {
+      store.setFocusedSolid(solidId);
+      selectionManager.selectBySolidId(solidId, multi);
     }
-  } else if (
-    node.type === "edge" &&
-    node.solidIndex !== undefined &&
-    node.edgeIndex !== undefined
-  ) {
-    const solidId = `solid_${node.solidIndex}`;
-    const solid = store.solidMap.get(solidId);
-    if (solid) {
-      selectionManager.selectByEdgeIndex(solid.id, node.edgeIndex, multi);
+  } else if (node.type === "edge" && node.edgeIndex !== undefined) {
+    const solidId = store.solidIdOfIndex(node.solidIndex);
+    if (solidId) {
+      selectionManager.selectByEdgeIndex(solidId, node.edgeIndex, multi);
     }
   }
 
@@ -1258,6 +1367,7 @@ function handleClearSelection(): void {
   }
   selectionManager?.clearSelection();
   store.clearSelection();
+  store.setFocusedSolid(null);
   urdfStore.selectedLinkId = null;
   urdfStore.selectedJointId = null;
   nextTick(() => urdfLeftPanelRef.value?.setCurrentNodeById(""));
@@ -1600,46 +1710,137 @@ defineExpose({
   }
 }
 
-.empty-overlay {
+.empty-state {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: var(--z-canvas-hud);
+  pointer-events: none;
+}
+
+.empty-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: rgba(245, 245, 245, 0.95);
-  z-index: 10;
+  gap: 10px;
+  max-width: 460px;
+  padding: 32px 36px;
+  text-align: center;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 60px -28px rgba(26, 33, 29, 0.28);
+  backdrop-filter: blur(10px) saturate(1.1);
 }
 
-.binding-overlay {
+.empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 2px;
+  font-size: 26px;
+  color: var(--accent);
+  background: var(--el-color-primary-light-9);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.empty-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+  color: var(--text-1);
+}
+
+.empty-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.empty-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.empty-state-enter-active,
+.empty-state-leave-active {
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+}
+
+.empty-state-enter-from,
+.empty-state-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.overlay-stack {
   position: absolute;
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 20;
-  animation: overlay-in 220ms var(--ease-out);
+  z-index: var(--z-canvas-hud);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(720px, calc(100% - 24px));
+  pointer-events: none;
+}
+
+.overlay-pill {
+  pointer-events: auto;
+  max-width: 100%;
 
   :deep(.el-tag) {
+    height: auto;
+    padding: 6px 12px;
+    line-height: 1.5;
+    white-space: normal;
     border-color: var(--line-strong);
     box-shadow: 0 6px 20px -6px rgba(26, 33, 29, 0.22);
     backdrop-filter: blur(6px);
   }
 }
 
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
+.overlay-item-enter-active,
+.overlay-item-leave-active {
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
 }
 
-.empty-text {
-  color: var(--text-2);
-  font-size: 14px;
-  margin: 0;
+.overlay-item-enter-from,
+.overlay-item-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.overlay-item-leave-active {
+  position: absolute;
+}
+
+.overlay-item-move {
+  transition: transform 200ms var(--ease-out);
 }
 
 .status-bar {
@@ -1683,13 +1884,6 @@ defineExpose({
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
-  }
-}
-
-@keyframes overlay-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -8px);
   }
 }
 

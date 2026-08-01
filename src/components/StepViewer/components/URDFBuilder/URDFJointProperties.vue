@@ -286,7 +286,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { vHint } from "../composables/useHintBar";
-import { ArrowRight } from "@element-plus/icons-vue";
+import ArrowRight from "~icons/ep/arrow-right";
 import { ElMessage } from "element-plus";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { flipRPY, type FrameAxis } from "../../core/AxisFrame";
@@ -406,7 +406,7 @@ function alignFrameToWorldZUp(): void {
   flex-wrap: wrap;
 
   .path-link {
-    color: #409eff;
+    color: var(--accent);
     font-weight: 500;
   }
 

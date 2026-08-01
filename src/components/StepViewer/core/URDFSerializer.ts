@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import * as THREE from "three";
 import { rotateInertiaTensor } from "./ZUpTransform";
+import { escapeXml, fmtNum, fmtVec3, matrixToRPY, parseVec3 } from "./xmlFormat";
 
 export interface SerializeOptions {
   linkRestInverses?: Map<string, THREE.Matrix4>;
@@ -112,13 +113,7 @@ function serializeLink(
 
     lines.push("    <collision>");
     if (collision) {
-      const pose =
-        collision.type === "convex"
-          ? {
-              xyz: [0, 0, 0] as [number, number, number],
-              rpy: [0, 0, 0] as [number, number, number],
-            }
-          : collisionPose(collision, s, restInverse);
+      const pose = collisionPose(collision, s, restInverse);
       lines.push(`      <origin xyz="${fmtVec3(pose.xyz)}" rpy="${fmtVec3(pose.rpy)}"/>`);
       lines.push("      <geometry>");
       lines.push(`        ${collisionGeometryTag(collision, link.name, s)}`);
@@ -544,7 +539,7 @@ function renumberIds(links: URDFLink[], joints: URDFJoint[], loops: LoopClosure[
   });
 }
 
-export function collisionPose(
+function collisionPose(
   shape: CollisionShape,
   unitScale: number,
   restInverse?: THREE.Matrix4,
@@ -613,31 +608,4 @@ function parseLimits(el: Element | null): JointLimits {
     effort: parseFloat(el.getAttribute("effort") || "100"),
     velocity: parseFloat(el.getAttribute("velocity") || "1"),
   };
-}
-
-function parseVec3(str: string): [number, number, number] {
-  const parts = str.trim().split(/\s+/).map(Number);
-  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
-}
-
-function fmtNum(n: number): string {
-  return Number.isFinite(n) ? parseFloat(n.toFixed(8)).toString() : "0";
-}
-
-function fmtVec3(v: [number, number, number] | number[]): string {
-  return `${fmtNum(v[0])} ${fmtNum(v[1])} ${fmtNum(v[2])}`;
-}
-
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function matrixToRPY(m: THREE.Matrix4): [number, number, number] {
-  const euler = new THREE.Euler().setFromRotationMatrix(m, "ZYX");
-  return [euler.x, euler.y, euler.z];
 }

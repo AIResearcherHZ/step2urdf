@@ -4,13 +4,12 @@ import type {
   CollisionShape,
   CollisionShapeType,
   CollisionMode,
-  CollisionHull,
   CollisionConflict,
   CollisionBuildResult,
 } from "../types";
+import { meshVolume as computeMeshVolume } from "./MeshSplitter";
 
-const MAX_FIT_POINTS = 4000;
-const MAX_HULL_POINTS = 700;
+const MAX_SCAN_POINTS = 200000;
 const EPS = 1e-9;
 
 export interface SolidGeometryInput {
@@ -30,6 +29,11 @@ export interface SeparateOptions {
   minScale: number;
   maxIterations?: number;
   deltaConfigs?: Map<string, THREE.Matrix4>[];
+  adjacentPairs?: Iterable<readonly [string, string]>;
+}
+
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 export function fitLinkShape(input: LinkGeometryInput): CollisionShape | null {
@@ -37,7 +41,7 @@ export function fitLinkShape(input: LinkGeometryInput): CollisionShape | null {
   if (!merged || merged.pts.length < 9) return null;
 
   const meshVolume = merged.volume;
-  const box = fitBox(merged.pts);
+  const box = fitBox(merged.pts, merged.normals);
   if (!box) return null;
 
   const axes: number[][] = [
@@ -49,6 +53,7 @@ export function fitLinkShape(input: LinkGeometryInput): CollisionShape | null {
     const len = Math.hypot(a[0], a[1], a[2]);
     if (len > EPS) axes.push([a[0] / len, a[1] / len, a[2] / len]);
   }
+  axes.push(...merged.normals);
 
   const cylinder = fitCylinder(merged.pts, axes);
   const sphere = fitSphere(merged.pts);
@@ -63,11 +68,6 @@ export function fitLinkShape(input: LinkGeometryInput): CollisionShape | null {
     ];
     scored.sort((a, b) => a.cost - b.cost);
     type = scored[0].type;
-    const bestVolume =
-      type === "box" ? box.volume : type === "cylinder" ? cylinder.volume : sphere.volume;
-    if (meshVolume > EPS && bestVolume > meshVolume * 2.2) {
-      type = "convex";
-    }
   }
 
   const shape = assembleShape(input.linkId, type, box, cylinder, sphere, merged.pts, meshVolume);
@@ -85,6 +85,8 @@ export function separateShapes(
     options.deltaConfigs && options.deltaConfigs.length > 0
       ? options.deltaConfigs
       : [new Map<string, THREE.Matrix4>()];
+  const adjacent = new Set<string>();
+  for (const [a, b] of options.adjacentPairs ?? []) adjacent.add(pairKey(a, b));
 
   let conflicts: CollisionConflict[] = [];
   let iterations = 0;
@@ -99,6 +101,7 @@ export function separateShapes(
 
       for (let i = 0; i < shapes.length; i++) {
         for (let j = i + 1; j < shapes.length; j++) {
+          if (adjacent.has(pairKey(shapes[i].linkId, shapes[j].linkId))) continue;
           if (sameDelta(config.get(shapes[i].linkId), config.get(shapes[j].linkId))) {
             if (config !== configs[0]) continue;
           }
@@ -209,26 +212,35 @@ function assembleShape(
     };
   }
 
-  const hull = buildHull(pts);
   return {
     linkId,
-    type: "convex",
+    type: "box",
     center: [box.center[0], box.center[1], box.center[2]],
     quat: boxQuat,
     halfExtents: [box.half[0], box.half[1], box.half[2]],
     originalHalfExtents: [box.half[0], box.half[1], box.half[2]],
     radius: 0,
     height: 0,
-    hull: hull ?? undefined,
     meshVolume,
-    shapeVolume: hull ? hullVolume(hull) : box.volume,
+    shapeVolume: box.volume,
     shrunk: false,
   };
 }
 
 interface MergedGeometry {
   pts: Float64Array;
+  normals: number[][];
   volume: number;
+}
+
+function convexHullOf(points: THREE.Vector3[]): ConvexHull | null {
+  if (points.length < 4) return null;
+  try {
+    const hull = new ConvexHull().setFromPoints(points);
+    return hull.faces.length > 0 ? hull : null;
+  } catch {
+    return null;
+  }
 }
 
 function mergeSolids(solids: SolidGeometryInput[]): MergedGeometry | null {
@@ -236,39 +248,56 @@ function mergeSolids(solids: SolidGeometryInput[]): MergedGeometry | null {
   let volume = 0;
   for (const s of solids) {
     totalPoints += s.positions.length / 3;
-    volume += meshVolume(s.positions, s.indices);
+    volume += Math.abs(computeMeshVolume(s.positions, s.indices));
   }
   if (totalPoints === 0) return null;
 
-  const stride = Math.max(1, Math.ceil(totalPoints / MAX_FIT_POINTS));
-  const out: number[] = [];
+  const stride = Math.max(1, Math.ceil(totalPoints / MAX_SCAN_POINTS));
+  const input: THREE.Vector3[] = [];
   for (const s of solids) {
-    const n = s.positions.length / 3;
+    const p = s.positions;
+    const n = p.length / 3;
     for (let i = 0; i < n; i += stride) {
-      out.push(s.positions[i * 3], s.positions[i * 3 + 1], s.positions[i * 3 + 2]);
+      input.push(new THREE.Vector3(p[i * 3], p[i * 3 + 1], p[i * 3 + 2]));
     }
   }
-  return { pts: Float64Array.from(out), volume: Math.abs(volume) };
-}
 
-function meshVolume(positions: Float32Array, indices: Uint32Array): number {
-  let v = 0;
-  for (let t = 0; t < indices.length; t += 3) {
-    const i0 = indices[t] * 3,
-      i1 = indices[t + 1] * 3,
-      i2 = indices[t + 2] * 3;
-    const ax = positions[i0],
-      ay = positions[i0 + 1],
-      az = positions[i0 + 2];
-    const bx = positions[i1],
-      by = positions[i1 + 1],
-      bz = positions[i1 + 2];
-    const cx = positions[i2],
-      cy = positions[i2 + 1],
-      cz = positions[i2 + 2];
-    v += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6;
+  const hull = convexHullOf(input);
+  if (!hull) {
+    const flat = new Float64Array(input.length * 3);
+    input.forEach((v, i) => {
+      flat[i * 3] = v.x;
+      flat[i * 3 + 1] = v.y;
+      flat[i * 3 + 2] = v.z;
+    });
+    return { pts: flat, normals: [], volume: Math.abs(volume) };
   }
-  return Math.abs(v);
+
+  const seen = new Set<THREE.Vector3>();
+  const pts: number[] = [];
+  const normals: number[][] = [];
+  const normalSeen = new Set<string>();
+
+  for (const face of hull.faces) {
+    let edge = face.edge;
+    do {
+      const point = edge.head().point;
+      if (!seen.has(point)) {
+        seen.add(point);
+        pts.push(point.x, point.y, point.z);
+      }
+      edge = edge.next;
+    } while (edge !== face.edge);
+
+    const n = face.normal;
+    const key = `${n.x.toFixed(6)}_${n.y.toFixed(6)}_${n.z.toFixed(6)}`;
+    if (!normalSeen.has(key)) {
+      normalSeen.add(key);
+      normals.push([n.x, n.y, n.z]);
+    }
+  }
+
+  return { pts: Float64Array.from(pts), normals, volume: Math.abs(volume) };
 }
 
 interface BoxFit {
@@ -292,83 +321,121 @@ interface SphereFit {
   volume: number;
 }
 
-function fitBox(pts: Float64Array): BoxFit | null {
+function projectHull(pts: Float64Array, u: number[], v: number[]): Float64Array {
   const n = pts.length / 3;
-  if (n === 0) return null;
-
-  const mean = [0, 0, 0];
+  const out = new Float64Array(n * 2);
   for (let i = 0; i < n; i++) {
-    mean[0] += pts[i * 3];
-    mean[1] += pts[i * 3 + 1];
-    mean[2] += pts[i * 3 + 2];
+    const x = pts[i * 3];
+    const y = pts[i * 3 + 1];
+    const z = pts[i * 3 + 2];
+    out[i * 2] = u[0] * x + u[1] * y + u[2] * z;
+    out[i * 2 + 1] = v[0] * x + v[1] * y + v[2] * z;
   }
-  mean[0] /= n;
-  mean[1] /= n;
-  mean[2] /= n;
-
-  const cov = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-  for (let i = 0; i < n; i++) {
-    const x = pts[i * 3] - mean[0];
-    const y = pts[i * 3 + 1] - mean[1];
-    const z = pts[i * 3 + 2] - mean[2];
-    cov[0] += x * x;
-    cov[1] += x * y;
-    cov[2] += x * z;
-    cov[4] += y * y;
-    cov[5] += y * z;
-    cov[8] += z * z;
-  }
-  cov[3] = cov[1];
-  cov[6] = cov[2];
-  cov[7] = cov[5];
-  for (let i = 0; i < 9; i++) cov[i] /= n;
-
-  const eig = jacobiEigen3(cov);
-  const candidates: number[][] = [eig, [1, 0, 0, 0, 1, 0, 0, 0, 1]];
-
-  let best: BoxFit | null = null;
-  for (const base of candidates) {
-    const refined = refineRotation(pts, base);
-    if (!best || refined.volume < best.volume) best = refined;
-  }
-  return best;
+  return out;
 }
 
-function refineRotation(pts: Float64Array, base: number[]): BoxFit {
-  let rot = orthonormalize(base);
-  let best = extentsIn(pts, rot);
+function convexHull2D(pts: Float64Array): Float64Array {
+  const n = pts.length / 2;
+  if (n < 3) return pts;
 
-  for (let pass = 0; pass < 2; pass++) {
-    const step = pass === 0 ? Math.PI / 90 : Math.PI / 360;
-    const range = pass === 0 ? 45 : 12;
-    for (let axis = 0; axis < 3; axis++) {
-      let improvedRot = rot;
-      let improved = best;
-      for (let k = -range; k <= range; k++) {
-        if (k === 0) continue;
-        const cand = rotateAround(rot, axis, k * step);
-        const fit = extentsIn(pts, cand);
-        if (fit.volume < improved.volume - EPS) {
-          improved = fit;
-          improvedRot = cand;
-        }
+  const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => {
+    const dx = pts[a * 2] - pts[b * 2];
+    return dx !== 0 ? dx : pts[a * 2 + 1] - pts[b * 2 + 1];
+  });
+
+  const cross = (o: number, a: number, b: number): number =>
+    (pts[a * 2] - pts[o * 2]) * (pts[b * 2 + 1] - pts[o * 2 + 1]) -
+    (pts[a * 2 + 1] - pts[o * 2 + 1]) * (pts[b * 2] - pts[o * 2]);
+
+  const build = (seq: number[]): number[] => {
+    const stack: number[] = [];
+    for (const i of seq) {
+      while (stack.length >= 2 && cross(stack[stack.length - 2], stack[stack.length - 1], i) <= 0) {
+        stack.pop();
       }
-      rot = improvedRot;
-      best = improved;
+      stack.push(i);
     }
-  }
-  return best;
+    stack.pop();
+    return stack;
+  };
+
+  const chain = [...build(order), ...build(order.slice().reverse())];
+  const out = new Float64Array(chain.length * 2);
+  chain.forEach((idx, i) => {
+    out[i * 2] = pts[idx * 2];
+    out[i * 2 + 1] = pts[idx * 2 + 1];
+  });
+  return out;
 }
 
-function extentsIn(pts: Float64Array, rot: number[]): BoxFit {
+interface Rect2D {
+  area: number;
+  axis: [number, number];
+  halfU: number;
+  halfV: number;
+  midU: number;
+  midV: number;
+}
+
+function minAreaRect(hull2d: Float64Array): Rect2D {
+  const n = hull2d.length / 2;
+  let best: Rect2D | null = null;
+
+  const evaluate = (dx: number, dy: number): void => {
+    const len = Math.hypot(dx, dy);
+    if (len < EPS) return;
+    const ax = dx / len;
+    const ay = dy / len;
+    let minU = Infinity;
+    let maxU = -Infinity;
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const x = hull2d[i * 2];
+      const y = hull2d[i * 2 + 1];
+      const u = ax * x + ay * y;
+      const v = -ay * x + ax * y;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    const halfU = Math.max((maxU - minU) / 2, EPS);
+    const halfV = Math.max((maxV - minV) / 2, EPS);
+    const area = halfU * halfV * 4;
+    if (!best || area < best.area - EPS) {
+      best = {
+        area,
+        axis: [ax, ay],
+        halfU,
+        halfV,
+        midU: (maxU + minU) / 2,
+        midV: (maxV + minV) / 2,
+      };
+    }
+  };
+
+  if (n < 2) {
+    evaluate(1, 0);
+    return best!;
+  }
+
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    evaluate(hull2d[j * 2] - hull2d[i * 2], hull2d[j * 2 + 1] - hull2d[i * 2 + 1]);
+  }
+  return best!;
+}
+
+function boxFromAxes(pts: Float64Array, rot: number[]): BoxFit {
   const n = pts.length / 3;
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
 
   for (let i = 0; i < n; i++) {
-    const x = pts[i * 3],
-      y = pts[i * 3 + 1],
-      z = pts[i * 3 + 2];
+    const x = pts[i * 3];
+    const y = pts[i * 3 + 1];
+    const z = pts[i * 3 + 2];
     for (let a = 0; a < 3; a++) {
       const d = rot[a * 3] * x + rot[a * 3 + 1] * y + rot[a * 3 + 2] * z;
       if (d < min[a]) min[a] = d;
@@ -391,175 +458,180 @@ function extentsIn(pts: Float64Array, rot: number[]): BoxFit {
   return { center, half, rot, volume: 8 * half[0] * half[1] * half[2] };
 }
 
+function fitBox(pts: Float64Array, hullNormals: number[][]): BoxFit | null {
+  const n = pts.length / 3;
+  if (n === 0) return null;
+
+  const candidates: number[][] = [[1, 0, 0], [0, 1, 0], [0, 0, 1], ...hullNormals];
+
+  let best: BoxFit | null = null;
+  for (const axis of candidates) {
+    const len = Math.hypot(axis[0], axis[1], axis[2]);
+    if (len < EPS) continue;
+    const w = [axis[0] / len, axis[1] / len, axis[2] / len];
+    const [u, v] = orthoBasis(w);
+
+    const rect = minAreaRect(convexHull2D(projectHull(pts, u, v)));
+    const c = rect.axis[0];
+    const s = rect.axis[1];
+    const e0 = [u[0] * c + v[0] * s, u[1] * c + v[1] * s, u[2] * c + v[2] * s];
+    const e1 = [-u[0] * s + v[0] * c, -u[1] * s + v[1] * c, -u[2] * s + v[2] * c];
+
+    const fit = boxFromAxes(pts, [e0[0], e0[1], e0[2], e1[0], e1[1], e1[2], w[0], w[1], w[2]]);
+    if (!best || fit.volume < best.volume - EPS) best = fit;
+  }
+
+  return best;
+}
+
+function welzlCircle(proj: Float64Array): { x: number; y: number; r: number } {
+  const n = proj.length / 2;
+  if (n === 0) return { x: 0, y: 0, r: EPS };
+
+  const px = (i: number) => proj[i * 2];
+  const py = (i: number) => proj[i * 2 + 1];
+
+  const fromTwo = (a: number, b: number) => ({
+    x: (px(a) + px(b)) / 2,
+    y: (py(a) + py(b)) / 2,
+    r: Math.hypot(px(a) - px(b), py(a) - py(b)) / 2,
+  });
+
+  const fromThree = (a: number, b: number, c: number) => {
+    const ax = px(a);
+    const ay = py(a);
+    const bx = px(b) - ax;
+    const by = py(b) - ay;
+    const cx = px(c) - ax;
+    const cy = py(c) - ay;
+    const d = 2 * (bx * cy - by * cx);
+    if (Math.abs(d) < EPS) return null;
+    const b2 = bx * bx + by * by;
+    const c2 = cx * cx + cy * cy;
+    const ux = (cy * b2 - by * c2) / d;
+    const uy = (bx * c2 - cx * b2) / d;
+    return { x: ax + ux, y: ay + uy, r: Math.hypot(ux, uy) };
+  };
+
+  const inside = (circle: { x: number; y: number; r: number }, i: number): boolean =>
+    Math.hypot(px(i) - circle.x, py(i) - circle.y) <= circle.r * (1 + 1e-12) + EPS;
+
+  let circle = { x: px(0), y: py(0), r: 0 };
+  for (let i = 1; i < n; i++) {
+    if (inside(circle, i)) continue;
+    circle = { x: px(i), y: py(i), r: 0 };
+    for (let j = 0; j < i; j++) {
+      if (inside(circle, j)) continue;
+      circle = fromTwo(i, j);
+      for (let k = 0; k < j; k++) {
+        if (inside(circle, k)) continue;
+        const c3 = fromThree(i, j, k);
+        if (c3) circle = c3;
+      }
+    }
+  }
+
+  circle.r = Math.max(circle.r, EPS);
+  return circle;
+}
+
 function fitCylinder(pts: Float64Array, axes: number[][]): CylinderFit {
   let best: CylinderFit | null = null;
 
   for (const axis of axes) {
-    const [u, v] = orthoBasis(axis);
+    const len = Math.hypot(axis[0], axis[1], axis[2]);
+    if (len < EPS) continue;
+    const w = [axis[0] / len, axis[1] / len, axis[2] / len];
+    const [u, v] = orthoBasis(w);
     const n = pts.length / 3;
-    let minA = Infinity,
-      maxA = -Infinity;
-    const proj = new Float64Array(n * 2);
 
+    let minA = Infinity;
+    let maxA = -Infinity;
     for (let i = 0; i < n; i++) {
-      const x = pts[i * 3],
-        y = pts[i * 3 + 1],
-        z = pts[i * 3 + 2];
-      const a = axis[0] * x + axis[1] * y + axis[2] * z;
+      const a = w[0] * pts[i * 3] + w[1] * pts[i * 3 + 1] + w[2] * pts[i * 3 + 2];
       if (a < minA) minA = a;
       if (a > maxA) maxA = a;
-      proj[i * 2] = u[0] * x + u[1] * y + u[2] * z;
-      proj[i * 2 + 1] = v[0] * x + v[1] * y + v[2] * z;
     }
 
-    const circle = minEnclosingCircle(proj);
+    const circle = welzlCircle(projectHull(pts, u, v));
     const height = Math.max(maxA - minA, EPS);
     const radius = Math.max(circle.r, EPS);
     const midA = (maxA + minA) / 2;
     const center = [
-      axis[0] * midA + u[0] * circle.x + v[0] * circle.y,
-      axis[1] * midA + u[1] * circle.x + v[1] * circle.y,
-      axis[2] * midA + u[2] * circle.x + v[2] * circle.y,
+      w[0] * midA + u[0] * circle.x + v[0] * circle.y,
+      w[1] * midA + u[1] * circle.x + v[1] * circle.y,
+      w[2] * midA + u[2] * circle.x + v[2] * circle.y,
     ];
     const volume = Math.PI * radius * radius * height;
-    if (!best || volume < best.volume) {
-      best = { center, axis: [...axis], radius, height, volume };
+    if (!best || volume < best.volume - EPS) {
+      best = { center, axis: w, radius, height, volume };
     }
   }
 
   return best!;
 }
 
-function minEnclosingCircle(proj: Float64Array): { x: number; y: number; r: number } {
-  const n = proj.length / 2;
-  let cx = 0,
-    cy = 0;
-  for (let i = 0; i < n; i++) {
-    cx += proj[i * 2];
-    cy += proj[i * 2 + 1];
-  }
-  cx /= n;
-  cy /= n;
-
-  let r = 0;
-  for (let i = 0; i < n; i++) {
-    const d = Math.hypot(proj[i * 2] - cx, proj[i * 2 + 1] - cy);
-    if (d > r) r = d;
-  }
-
-  for (let iter = 0; iter < 48; iter++) {
-    let far = -1,
-      farD = 0;
-    for (let i = 0; i < n; i++) {
-      const d = Math.hypot(proj[i * 2] - cx, proj[i * 2 + 1] - cy);
-      if (d > farD) {
-        farD = d;
-        far = i;
-      }
-    }
-    if (far < 0 || farD <= r + EPS) break;
-    const move = (farD - r) / 2;
-    const dx = (proj[far * 2] - cx) / farD;
-    const dy = (proj[far * 2 + 1] - cy) / farD;
-    cx += dx * move;
-    cy += dy * move;
-    r += move;
-  }
-
-  return { x: cx, y: cy, r };
-}
-
 function fitSphere(pts: Float64Array): SphereFit {
   const n = pts.length / 3;
-  let cx = 0,
-    cy = 0,
-    cz = 0;
-  for (let i = 0; i < n; i++) {
-    cx += pts[i * 3];
-    cy += pts[i * 3 + 1];
-    cz += pts[i * 3 + 2];
-  }
-  cx /= n;
-  cy /= n;
-  cz /= n;
+  if (n === 0) return { center: [0, 0, 0], radius: EPS, volume: 0 };
 
-  let r = 0;
-  for (let i = 0; i < n; i++) {
-    const d = Math.hypot(pts[i * 3] - cx, pts[i * 3 + 1] - cy, pts[i * 3 + 2] - cz);
-    if (d > r) r = d;
-  }
+  const px = (i: number) => pts[i * 3];
+  const py = (i: number) => pts[i * 3 + 1];
+  const pz = (i: number) => pts[i * 3 + 2];
 
-  for (let iter = 0; iter < 48; iter++) {
-    let far = -1,
-      farD = 0;
-    for (let i = 0; i < n; i++) {
-      const d = Math.hypot(pts[i * 3] - cx, pts[i * 3 + 1] - cy, pts[i * 3 + 2] - cz);
-      if (d > farD) {
-        farD = d;
-        far = i;
-      }
-    }
-    if (far < 0 || farD <= r + EPS) break;
-    const move = (farD - r) / 2;
-    cx += ((pts[far * 3] - cx) / farD) * move;
-    cy += ((pts[far * 3 + 1] - cy) / farD) * move;
-    cz += ((pts[far * 3 + 2] - cz) / farD) * move;
-    r += move;
-  }
+  const inside = (c: { x: number; y: number; z: number; r: number }, i: number): boolean =>
+    Math.hypot(px(i) - c.x, py(i) - c.y, pz(i) - c.z) <= c.r * (1 + 1e-12) + EPS;
 
-  r = Math.max(r, EPS);
-  return { center: [cx, cy, cz], radius: r, volume: (4 / 3) * Math.PI * r * r * r };
-}
+  const fromTwo = (a: number, b: number) => ({
+    x: (px(a) + px(b)) / 2,
+    y: (py(a) + py(b)) / 2,
+    z: (pz(a) + pz(b)) / 2,
+    r: Math.hypot(px(a) - px(b), py(a) - py(b), pz(a) - pz(b)) / 2,
+  });
 
-function buildHull(pts: Float64Array): CollisionHull | null {
-  const n = pts.length / 3;
-  if (n < 4) return null;
-
-  const stride = Math.max(1, Math.ceil(n / MAX_HULL_POINTS));
-  const vectors: THREE.Vector3[] = [];
-  for (let i = 0; i < n; i += stride) {
-    vectors.push(new THREE.Vector3(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]));
-  }
-  if (vectors.length < 4) return null;
-
-  try {
-    const hull = new ConvexHull().setFromPoints(vectors);
-    const positions: number[] = [];
-    const indices: number[] = [];
-    const keyMap = new Map<string, number>();
-
-    const addVertex = (p: THREE.Vector3): number => {
-      const key = `${p.x.toFixed(4)}_${p.y.toFixed(4)}_${p.z.toFixed(4)}`;
-      const existing = keyMap.get(key);
-      if (existing !== undefined) return existing;
-      const id = positions.length / 3;
-      positions.push(p.x, p.y, p.z);
-      keyMap.set(key, id);
-      return id;
+  const grow = (c: { x: number; y: number; z: number; r: number }, i: number) => {
+    const d = Math.hypot(px(i) - c.x, py(i) - c.y, pz(i) - c.z);
+    if (d <= c.r) return c;
+    const r = (c.r + d) / 2;
+    const k = (r - c.r) / d;
+    return {
+      x: c.x + (px(i) - c.x) * k,
+      y: c.y + (py(i) - c.y) * k,
+      z: c.z + (pz(i) - c.z) * k,
+      r,
     };
+  };
 
-    for (const face of hull.faces) {
-      const ring: number[] = [];
-      let edge = face.edge;
-      do {
-        ring.push(addVertex(edge.head().point));
-        edge = edge.next;
-      } while (edge !== face.edge);
-
-      for (let k = 1; k < ring.length - 1; k++) {
-        indices.push(ring[0], ring[k], ring[k + 1]);
+  let sphere = { x: px(0), y: py(0), z: pz(0), r: 0 };
+  for (let i = 1; i < n; i++) {
+    if (inside(sphere, i)) continue;
+    sphere = { x: px(i), y: py(i), z: pz(i), r: 0 };
+    for (let j = 0; j < i; j++) {
+      if (inside(sphere, j)) continue;
+      sphere = fromTwo(i, j);
+      for (let k = 0; k < j; k++) {
+        if (inside(sphere, k)) continue;
+        sphere = grow(sphere, k);
       }
     }
-
-    if (indices.length === 0) return null;
-    return { positions: Float32Array.from(positions), indices: Uint32Array.from(indices) };
-  } catch {
-    return null;
   }
-}
 
-function hullVolume(hull: CollisionHull): number {
-  return meshVolume(hull.positions, hull.indices);
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      if (inside(sphere, i)) continue;
+      sphere = grow(sphere, i);
+      changed = true;
+    }
+    if (!changed) break;
+  }
+
+  const r = Math.max(sphere.r, EPS);
+  return {
+    center: [sphere.x, sphere.y, sphere.z],
+    radius: r,
+    volume: (4 / 3) * Math.PI * r * r * r,
+  };
 }
 
 interface Proxy {
@@ -706,41 +778,9 @@ function shrinkShape(
   const axisWorld = axisLocal.applyQuaternion(q);
   shape.center = offsetCenter(shape.center, axisWorld, -cut / 2);
 
-  if (shape.type === "convex" && shape.hull) {
-    clipHull(shape.hull, axisLocal.clone().normalize(), q, cut);
-  }
-
-  shape.shapeVolume =
-    shape.type === "convex" && shape.hull
-      ? hullVolume(shape.hull)
-      : 8 * half[0] * half[1] * half[2];
+  shape.shapeVolume = 8 * half[0] * half[1] * half[2];
   shape.shrunk = true;
   return true;
-}
-
-function clipHull(
-  hull: CollisionHull,
-  axisLocal: THREE.Vector3,
-  q: THREE.Quaternion,
-  cut: number,
-): void {
-  const axisWorld = axisLocal.clone().applyQuaternion(q).normalize();
-  const pos = hull.positions;
-  let maxD = -Infinity;
-  for (let i = 0; i < pos.length; i += 3) {
-    const d = pos[i] * axisWorld.x + pos[i + 1] * axisWorld.y + pos[i + 2] * axisWorld.z;
-    if (d > maxD) maxD = d;
-  }
-  const plane = maxD - cut;
-  for (let i = 0; i < pos.length; i += 3) {
-    const d = pos[i] * axisWorld.x + pos[i + 1] * axisWorld.y + pos[i + 2] * axisWorld.z;
-    if (d > plane) {
-      const over = d - plane;
-      pos[i] -= axisWorld.x * over;
-      pos[i + 1] -= axisWorld.y * over;
-      pos[i + 2] -= axisWorld.z * over;
-    }
-  }
 }
 
 function offsetCenter(
@@ -798,90 +838,4 @@ function orthoBasis(axis: number[]): [number[], number[]] {
     [u.x, u.y, u.z],
     [v.x, v.y, v.z],
   ];
-}
-
-function orthonormalize(rot: number[]): number[] {
-  const x = new THREE.Vector3(rot[0], rot[1], rot[2]).normalize();
-  let y = new THREE.Vector3(rot[3], rot[4], rot[5]);
-  y.sub(x.clone().multiplyScalar(x.dot(y)));
-  if (y.lengthSq() < 1e-12) y = new THREE.Vector3(0, 0, 1).cross(x);
-  y.normalize();
-  const z = new THREE.Vector3().crossVectors(x, y).normalize();
-  return [x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z];
-}
-
-function rotateAround(rot: number[], axisIndex: number, angle: number): number[] {
-  const axis = new THREE.Vector3(
-    rot[axisIndex * 3],
-    rot[axisIndex * 3 + 1],
-    rot[axisIndex * 3 + 2],
-  ).normalize();
-  const q = new THREE.Quaternion().setFromAxisAngle(axis, angle);
-  const out: number[] = [];
-  for (let a = 0; a < 3; a++) {
-    const v = new THREE.Vector3(rot[a * 3], rot[a * 3 + 1], rot[a * 3 + 2]).applyQuaternion(q);
-    out.push(v.x, v.y, v.z);
-  }
-  return orthonormalize(out);
-}
-
-function jacobiEigen3(m: number[]): number[] {
-  const a = [...m];
-  const v = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
-  for (let sweep = 0; sweep < 32; sweep++) {
-    let off = 0;
-    for (let i = 0; i < 3; i++) {
-      for (let j = i + 1; j < 3; j++) off += a[i * 3 + j] * a[i * 3 + j];
-    }
-    if (off < 1e-18) break;
-
-    for (let p = 0; p < 2; p++) {
-      for (let q = p + 1; q < 3; q++) {
-        const apq = a[p * 3 + q];
-        if (Math.abs(apq) < 1e-18) continue;
-        const theta = (a[q * 3 + q] - a[p * 3 + p]) / (2 * apq);
-        const t = Math.sign(theta || 1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
-        const c = 1 / Math.sqrt(t * t + 1);
-        const s = t * c;
-
-        for (let k = 0; k < 3; k++) {
-          const akp = a[k * 3 + p],
-            akq = a[k * 3 + q];
-          a[k * 3 + p] = c * akp - s * akq;
-          a[k * 3 + q] = s * akp + c * akq;
-        }
-        for (let k = 0; k < 3; k++) {
-          const apk = a[p * 3 + k],
-            aqk = a[q * 3 + k];
-          a[p * 3 + k] = c * apk - s * aqk;
-          a[q * 3 + k] = s * apk + c * aqk;
-        }
-        for (let k = 0; k < 3; k++) {
-          const vkp = v[k * 3 + p],
-            vkq = v[k * 3 + q];
-          v[k * 3 + p] = c * vkp - s * vkq;
-          v[k * 3 + q] = s * vkp + c * vkq;
-        }
-      }
-    }
-  }
-
-  const cols = [
-    [v[0], v[3], v[6], a[0]],
-    [v[1], v[4], v[7], a[4]],
-    [v[2], v[5], v[8], a[8]],
-  ];
-  cols.sort((x, y) => y[3] - x[3]);
-  return orthonormalize([
-    cols[0][0],
-    cols[0][1],
-    cols[0][2],
-    cols[1][0],
-    cols[1][1],
-    cols[1][2],
-    cols[2][0],
-    cols[2][1],
-    cols[2][2],
-  ]);
 }

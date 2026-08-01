@@ -132,7 +132,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { FolderOpened } from "@element-plus/icons-vue";
+import FolderOpened from "~icons/ep/folder-opened";
 import { collectFilesFromDataTransfer, collectFilesFromInput } from "../../core/DirectoryDrop";
 import {
   buildMeshIndex,
@@ -338,8 +338,8 @@ async function applyPackage(): Promise<void> {
   transition: all 0.2s;
 
   &.is-dragover {
-    border-color: var(--el-color-primary, #409eff);
-    background: var(--el-color-primary-light-9, #ecf5ff);
+    border-color: var(--el-color-primary, var(--accent));
+    background: var(--el-color-primary-light-9, var(--el-color-primary-light-9));
   }
 
   &.is-busy {
@@ -350,7 +350,7 @@ async function applyPackage(): Promise<void> {
 
 .pkg-drop-icon {
   font-size: 30px;
-  color: var(--el-color-primary, #409eff);
+  color: var(--el-color-primary, var(--accent));
 }
 
 .pkg-drop-title {
@@ -406,8 +406,8 @@ async function applyPackage(): Promise<void> {
   margin-bottom: 6px;
 
   &.is-active {
-    border-color: var(--el-color-primary, #409eff);
-    background: var(--el-color-primary-light-9, #ecf5ff);
+    border-color: var(--el-color-primary, var(--accent));
+    background: var(--el-color-primary-light-9, var(--el-color-primary-light-9));
   }
 }
 

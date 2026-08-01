@@ -106,7 +106,7 @@ function quatToRpy(q: [number, number, number, number]): [number, number, number
   return [roll, pitch, yaw];
 }
 
-export function extractMeshRefs(text: string, format: RobotFileFormat): Map<string, MeshRef[]> {
+function extractMeshRefs(text: string, format: RobotFileFormat): Map<string, MeshRef[]> {
   const doc = new DOMParser().parseFromString(text, "application/xml");
   if (doc.querySelector("parsererror")) return new Map();
   return format === "mjcf" ? extractMjcfMeshRefs(doc) : extractUrdfMeshRefs(doc);
@@ -215,7 +215,7 @@ function parseVec4(text: string): [number, number, number, number] {
   return [nums[0] ?? 1, nums[1] ?? 0, nums[2] ?? 0, nums[3] ?? 0];
 }
 
-export function resolveMeshFile(
+function resolveMeshFile(
   raw: string,
   descriptorPath: string,
   meshIndex: Map<string, File>,

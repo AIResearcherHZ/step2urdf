@@ -1,5 +1,7 @@
+import { resetOpfsRoot } from "./opfs";
+
 const KNOWN_DATABASES = ["step2urdf"];
-const OPFS_ROOT_DIR = "step2urdf";
+const DB_TIMEOUT_MS = 8000;
 
 export interface SiteCacheUsage {
   caches: number;
@@ -10,13 +12,15 @@ export interface SiteCacheUsage {
   totalBytes: number;
 }
 
-export interface SiteCacheReport {
-  caches: number;
-  serviceWorkers: number;
-  localStorageKeys: number;
-  sessionStorageKeys: number;
-  databases: number;
-  failures: string[];
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    const settle = (value: T) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    promise.then(settle, () => settle(fallback));
+  });
 }
 
 async function cacheNames(): Promise<string[]> {
@@ -37,7 +41,7 @@ async function serviceWorkerRegistrations(): Promise<readonly ServiceWorkerRegis
   }
 }
 
-function databaseExists(name: string): Promise<boolean> {
+function probeDatabase(name: string): Promise<boolean> {
   return new Promise((resolve) => {
     let existed = true;
     try {
@@ -51,11 +55,14 @@ function databaseExists(name: string): Promise<boolean> {
         resolve(existed);
       };
       request.onerror = () => resolve(false);
-      request.onblocked = () => resolve(true);
     } catch {
       resolve(false);
     }
   });
+}
+
+function databaseExists(name: string): Promise<boolean> {
+  return withTimeout(probeDatabase(name), DB_TIMEOUT_MS, true);
 }
 
 async function databaseNames(): Promise<string[]> {
@@ -64,8 +71,9 @@ async function databaseNames(): Promise<string[]> {
       .databases;
     if (typeof enumerate === "function") {
       const list = await enumerate.call(indexedDB);
-      const names = list.map((entry) => entry?.name).filter((name): name is string => !!name);
-      return Array.from(new Set(names));
+      return Array.from(
+        new Set(list.map((entry) => entry?.name).filter((name): name is string => !!name)),
+      );
     }
   } catch {}
 
@@ -83,20 +91,27 @@ function storageKeyCount(storage: Storage | undefined): number {
   }
 }
 
+async function opfsRootEntries(): Promise<string[]> {
+  try {
+    if (typeof navigator.storage?.getDirectory !== "function") return [];
+    const base = await navigator.storage.getDirectory();
+    const names: string[] = [];
+    for await (const name of (base as unknown as { keys(): AsyncIterable<string> }).keys()) {
+      names.push(name);
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
 export async function measureSiteCache(): Promise<SiteCacheUsage> {
-  const [names, registrations, databases] = await Promise.all([
+  const [names, registrations, databases, estimate] = await Promise.all([
     cacheNames(),
     serviceWorkerRegistrations(),
     databaseNames(),
+    navigator.storage?.estimate?.().catch(() => null) ?? Promise.resolve(null),
   ]);
-
-  let totalBytes = 0;
-  try {
-    if (typeof navigator.storage?.estimate === "function") {
-      const { usage = 0 } = await navigator.storage.estimate();
-      totalBytes = usage;
-    }
-  } catch {}
 
   return {
     caches: names.length,
@@ -104,89 +119,95 @@ export async function measureSiteCache(): Promise<SiteCacheUsage> {
     localStorageKeys: storageKeyCount(globalThis.localStorage),
     sessionStorageKeys: storageKeyCount(globalThis.sessionStorage),
     databases: databases.length,
-    totalBytes,
+    totalBytes: estimate?.usage ?? 0,
   };
 }
 
-function deleteDatabase(name: string): Promise<boolean> {
+function requestDatabaseDelete(name: string): Promise<boolean | null> {
   return new Promise((resolve) => {
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      resolve(ok);
-    };
-
     try {
       const request = indexedDB.deleteDatabase(name);
-      request.onsuccess = () => finish(true);
-      request.onerror = () => finish(false);
-      request.onblocked = () => finish(false);
-      setTimeout(() => finish(false), 3000);
+      request.onsuccess = () => resolve(true);
+      request.onerror = () => resolve(false);
+      setTimeout(() => resolve(null), DB_TIMEOUT_MS);
     } catch {
-      finish(false);
+      resolve(false);
     }
   });
 }
 
-export async function clearSiteCache(): Promise<SiteCacheReport> {
-  const failures: string[] = [];
-  const report: SiteCacheReport = {
-    caches: 0,
-    serviceWorkers: 0,
-    localStorageKeys: 0,
-    sessionStorageKeys: 0,
-    databases: 0,
-    failures,
-  };
-
-  for (const name of await cacheNames()) {
-    try {
-      if (await caches.delete(name)) report.caches++;
-    } catch {
-      failures.push(`缓存 ${name}`);
-    }
-  }
-
-  for (const registration of await serviceWorkerRegistrations()) {
-    try {
-      if (await registration.unregister()) report.serviceWorkers++;
-    } catch {
-      failures.push("Service Worker");
-    }
-  }
-
-  try {
-    report.localStorageKeys = storageKeyCount(globalThis.localStorage);
-    globalThis.localStorage?.clear();
-  } catch {
-    failures.push("localStorage");
-  }
-
-  try {
-    report.sessionStorageKeys = storageKeyCount(globalThis.sessionStorage);
-    globalThis.sessionStorage?.clear();
-  } catch {
-    failures.push("sessionStorage");
-  }
-
-  for (const name of await databaseNames()) {
-    if (await deleteDatabase(name)) report.databases++;
-    else failures.push(`数据库 ${name}`);
-  }
-
-  if (!(await clearOpfsRoot())) failures.push("OPFS 文件");
-
-  return report;
+async function deleteDatabase(name: string): Promise<boolean> {
+  const result = await requestDatabaseDelete(name);
+  if (result !== null) return result;
+  return !(await databaseExists(name));
 }
 
-async function clearOpfsRoot(): Promise<boolean> {
-  try {
-    if (typeof navigator.storage?.getDirectory !== "function") return true;
-    const base = await navigator.storage.getDirectory();
-    await base.removeEntry(OPFS_ROOT_DIR, { recursive: true });
-    return true;
-  } catch (error) {
-    return (error as DOMException)?.name === "NotFoundError";
+async function clearOpfs(): Promise<string[]> {
+  resetOpfsRoot();
+  const entries = await opfsRootEntries();
+  if (entries.length === 0) return [];
+
+  const base = await navigator.storage.getDirectory();
+  const remove = async (name: string): Promise<boolean> => {
+    try {
+      await base.removeEntry(name, { recursive: true });
+      return true;
+    } catch (error) {
+      return (error as DOMException)?.name === "NotFoundError";
+    }
+  };
+
+  const failed: string[] = [];
+  for (const name of entries) {
+    if (!(await remove(name)) && !(await remove(name))) failed.push(name);
   }
+  return failed;
+}
+
+function clearWebStorage(storage: Storage | undefined): boolean {
+  try {
+    if (!storage) return true;
+    storage.clear();
+    return storage.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function clearSiteCache(): Promise<string[]> {
+  const failures = new Set<string>();
+
+  const registrations = await serviceWorkerRegistrations();
+  await Promise.all(
+    registrations.map(async (registration) => {
+      try {
+        if (!(await registration.unregister())) failures.add("Service Worker");
+      } catch {
+        failures.add("Service Worker");
+      }
+    }),
+  );
+
+  const [names, databases] = await Promise.all([cacheNames(), databaseNames()]);
+
+  await Promise.all([
+    ...names.map(async (name) => {
+      try {
+        if (!(await caches.delete(name))) failures.add(`缓存 ${name}`);
+      } catch {
+        failures.add(`缓存 ${name}`);
+      }
+    }),
+    ...databases.map(async (name) => {
+      if (!(await deleteDatabase(name))) failures.add(`数据库 ${name}`);
+    }),
+    clearOpfs().then((failed) => {
+      for (const name of failed) failures.add(`OPFS ${name}`);
+    }),
+  ]);
+
+  if (!clearWebStorage(globalThis.localStorage)) failures.add("localStorage");
+  if (!clearWebStorage(globalThis.sessionStorage)) failures.add("sessionStorage");
+
+  return Array.from(failures);
 }

@@ -1,4 +1,4 @@
-import NProgress from "@/config/nprogress";
+import { BProgress } from "@/config/progress";
 import { createRouter, createWebHistory } from "vue-router";
 
 const router = createRouter({
@@ -7,15 +7,15 @@ const router = createRouter({
 });
 
 router.beforeEach(() => {
-  NProgress.start();
+  BProgress.start();
 });
 
 router.afterEach(() => {
-  NProgress.done();
+  BProgress.done();
 });
 
 router.onError((error) => {
-  NProgress.done();
+  BProgress.done(true);
   console.warn("路由错误", error.message);
 });
 

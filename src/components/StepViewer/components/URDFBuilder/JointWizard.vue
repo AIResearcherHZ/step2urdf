@@ -1,7 +1,12 @@
 ﻿<template>
   <Teleport to="body">
-    <div v-show="urdfStore.jointWizardVisible" class="joint-wizard-panel" :style="panelStyle">
-      <div class="panel-header" @mousedown="startDrag">
+    <div
+      v-show="urdfStore.jointWizardVisible"
+      class="joint-wizard-panel"
+      ref="panelRef"
+      @pointerdown="bringToFront"
+    >
+      <div class="panel-header" ref="handleRef">
         <span class="panel-title">⚙️ 创建关节</span>
         <div class="panel-actions">
           <el-tag v-if="pickedEdgeInfo" type="success" size="small">{{ pickedEdgeInfo }}</el-tag>
@@ -308,8 +313,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onBeforeUnmount, type CSSProperties } from "vue";
+import { ref, reactive, computed, watch } from "vue";
 import { vHint } from "../composables/useHintBar";
+import { useFloatingPanel } from "../composables/useFloatingPanel";
 import * as THREE from "three";
 import { ElMessage } from "element-plus";
 import { useURDFStore } from "../../stores/useURDFStore";
@@ -339,12 +345,10 @@ const emit = defineEmits<{
   (e: "toggleXray", active: boolean): void;
 }>();
 
-const position = reactive({ x: window.innerWidth - 420, y: 80 });
-
-const panelStyle = computed<CSSProperties>(() => ({
-  left: `${position.x}px`,
-  top: `${position.y}px`,
-}));
+const { panelRef, handleRef, bringToFront } = useFloatingPanel({
+  visible: () => urdfStore.jointWizardVisible,
+  initial: ({ width }) => ({ x: Math.max(12, width - 420), y: 80 }),
+});
 
 const parentLinkId = ref("");
 const childLinkId = ref("");
@@ -690,45 +694,11 @@ watch(
     }
   },
 );
-
-let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let dragStartPosX = 0;
-let dragStartPosY = 0;
-
-function startDrag(e: MouseEvent): void {
-  isDragging = true;
-  dragStartX = e.clientX;
-  dragStartY = e.clientY;
-  dragStartPosX = position.x;
-  dragStartPosY = position.y;
-  document.addEventListener("mousemove", onDragMove);
-  document.addEventListener("mouseup", onDragEnd);
-}
-
-function onDragMove(e: MouseEvent): void {
-  if (!isDragging) return;
-  position.x = dragStartPosX + (e.clientX - dragStartX);
-  position.y = dragStartPosY + (e.clientY - dragStartY);
-}
-
-function onDragEnd(): void {
-  isDragging = false;
-  document.removeEventListener("mousemove", onDragMove);
-  document.removeEventListener("mouseup", onDragEnd);
-}
-
-onBeforeUnmount(() => {
-  document.removeEventListener("mousemove", onDragMove);
-  document.removeEventListener("mouseup", onDragEnd);
-});
 </script>
 
 <style lang="scss" scoped>
 .joint-wizard-panel {
   position: fixed;
-  z-index: 1500;
   width: 390px;
   background: var(--panel-face);
   border: 1px solid var(--panel-edge);
@@ -749,6 +719,7 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--line-strong);
   cursor: move;
   user-select: none;
+  touch-action: none;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
@@ -826,7 +797,7 @@ onBeforeUnmount(() => {
 
   &.active {
     background: #d9ecff;
-    box-shadow: inset 0 0 0 1px #409eff;
+    box-shadow: inset 0 0 0 1px var(--accent);
   }
 }
 
@@ -870,7 +841,7 @@ onBeforeUnmount(() => {
 
 .pick-current {
   font-size: 11px;
-  color: #409eff;
+  color: var(--accent);
   margin-top: 4px;
 }
 

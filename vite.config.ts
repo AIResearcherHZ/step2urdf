@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig, type Plugin } from "vite";
 import vue from "@vitejs/plugin-vue";
+import Icons from "unplugin-icons/vite";
 
 const wasmAsUrl = (): Plugin => ({
   name: "wasm-as-url",
@@ -60,11 +61,17 @@ const stripOcctSourcemaps = (): Plugin => ({
 });
 
 export default defineConfig({
-  plugins: [wasmAsUrl(), stubOcctNodeBuiltins(), stripOcctSourcemaps(), vue()],
+  plugins: [
+    wasmAsUrl(),
+    stubOcctNodeBuiltins(),
+    stripOcctSourcemaps(),
+    vue(),
+    Icons({ compiler: "vue3", scale: 1 }),
+  ],
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
     exclude: ["occt-wasm"],
-    include: ["gl-matrix", "jszip", "comlink"],
+    include: ["gl-matrix", "comlink", "@zip.js/zip.js"],
   },
   worker: {
     format: "es",

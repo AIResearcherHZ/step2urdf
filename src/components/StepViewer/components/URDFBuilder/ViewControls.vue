@@ -82,10 +82,10 @@
       <div
         v-show="inertiaPanelVisible"
         class="fk-floating-panel inertia-panel"
-        :style="panelStyle"
-        @mousedown.stop
+        ref="panelRef"
+        @pointerdown="bringToFront"
       >
-        <div class="fk-title-bar" @mousedown="startDrag">
+        <div class="fk-title-bar" ref="handleRef">
           <span class="fk-title">⚖️ 整机惯量计算</span>
           <div class="fk-title-actions">
             <el-button size="small" text circle @click="inertiaPanelVisible = false">✕</el-button>
@@ -204,10 +204,7 @@
                         @change="recalcRow(row as ResultRow)"
                       />
                       <span class="solid-mass-unit">kg</span>
-                      <span class="solid-mass-com">质心 {{ formatCom(s.com) }}</span>
-                      <span class="solid-mass-com" title="惯量主轴姿态，顺序 w, x, y, z">
-                        quat {{ formatQuat(s.inertiaAtCom) }}
-                      </span>
+                      <span class="solid-mass-com">质心 {{ formatCom(row.linkId, s.com) }}</span>
                     </div>
                   </div>
                 </template>
@@ -241,20 +238,21 @@
                   />
                 </template>
               </el-table-column>
-              <el-table-column label="质心 (mm)" min-width="160" align="center">
+              <el-table-column label="质心 (mm, 连杆系)" min-width="160" align="center">
                 <template #default="{ row }">
-                  {{ formatCom(row.com) }}
+                  {{ formatCom(row.linkId, row.com) }}
                 </template>
               </el-table-column>
-              <el-table-column label="主轴 quat (w,x,y,z)" min-width="200" align="center">
+              <el-table-column label="主轴 quat (w,x,y,z, 连杆系)" min-width="210" align="center">
                 <template #default="{ row }">
-                  {{ formatQuat(row.inertia) }}
+                  {{ formatQuat(row.linkId, row.inertia) }}
                 </template>
               </el-table-column>
             </el-table>
             <p class="edit-hint">
-              修改连杆质量会按当前比例缩放该连杆内未锁定的 Solid；单独修改 Solid 质量则连杆质量取各
-              Solid 之和；修改整机总质量只影响未锁定的 Solid。
+              质心与 quat 均显示在该连杆自身坐标系下，与导出的 URDF / MJCF
+              取值一致；修改连杆质量会按当前比例缩放该连杆内未锁定的 Solid；单独修改 Solid
+              质量则连杆质量取各 Solid 之和；修改整机总质量只影响未锁定的 Solid。
             </p>
           </div>
         </div>
@@ -287,11 +285,15 @@
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { vHint } from "../composables/useHintBar";
-import { Loading } from "@element-plus/icons-vue";
+import { useFloatingPanel } from "../composables/useFloatingPanel";
+import Loading from "~icons/ep/loading";
+import * as THREE from "three";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import { combineSolidInertia, principalAxisQuat } from "../../core/useInertiaWorker";
 import { distributeInertia, type LinkInertiaInput } from "../../core/InertiaDistribution";
+import { buildLinkRestInverses, toLinkLocalPoint } from "../../core/InertiaFrame";
+import { rotateInertiaTensor } from "../../core/ZUpTransform";
 import {
   UP_AXIS_OPTIONS,
   alignAllJointFramesToWorldZUp,
@@ -330,12 +332,26 @@ function alignAllJointFrames(): void {
   );
 }
 
-function formatCom(com: [number, number, number]): string {
-  return com.map((v) => v.toFixed(2)).join(", ");
+const restInverses = ref(new Map<string, THREE.Matrix4>());
+
+function refreshRestInverses(): void {
+  restInverses.value = buildLinkRestInverses(urdfStore.robot, {
+    baseLinkId: urdfStore.BASE_LINK_ID,
+    baseLinkOrigin: urdfStore.baseLinkOrigin,
+    baseLinkRPY: urdfStore.baseLinkRPY,
+  });
 }
 
-function formatQuat(inertia: InertialParams["inertia"]): string {
-  const [x, y, z, w] = principalAxisQuat(inertia);
+function formatCom(linkId: string, com: [number, number, number]): string {
+  return toLinkLocalPoint(com, restInverses.value.get(linkId))
+    .map((v) => v.toFixed(2))
+    .join(", ");
+}
+
+function formatQuat(linkId: string, inertia: InertialParams["inertia"]): string {
+  const inv = restInverses.value.get(linkId);
+  const local = inv ? rotateInertiaTensor(inertia, inv) : inertia;
+  const [x, y, z, w] = principalAxisQuat(local);
   return [w, x, y, z].map((v) => v.toFixed(4)).join(", ");
 }
 
@@ -347,43 +363,13 @@ function formatVolume(vMm3: number): string {
 
 const inertiaPanelVisible = ref(false);
 
-const posX = ref(Math.max(16, window.innerWidth * 0.5 - 440));
-const posY = ref(Math.max(40, window.innerHeight * 0.5 - 260));
-const panelStyle = computed(() => ({
-  left: `${posX.value}px`,
-  top: `${posY.value}px`,
-}));
-
-function startDrag(e: MouseEvent): void {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const startPosX = posX.value;
-  const startPosY = posY.value;
-
-  const onMouseMove = (moveEvent: MouseEvent) => {
-    posX.value = Math.max(
-      0,
-      Math.min(window.innerWidth - 100, startPosX + moveEvent.clientX - startX),
-    );
-    posY.value = Math.max(
-      0,
-      Math.min(window.innerHeight - 50, startPosY + moveEvent.clientY - startY),
-    );
-  };
-
-  const onMouseUp = () => {
-    document.removeEventListener("mousemove", onMouseMove);
-    document.removeEventListener("mouseup", onMouseUp);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  };
-
-  document.body.style.cursor = "move";
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onMouseMove);
-  document.addEventListener("mouseup", onMouseUp);
-}
+const { panelRef, handleRef, bringToFront } = useFloatingPanel({
+  visible: inertiaPanelVisible,
+  initial: ({ width, height }) => ({
+    x: Math.max(16, width * 0.5 - 440),
+    y: Math.max(40, height * 0.5 - 260),
+  }),
+});
 
 const totalMass = computed({
   get: () => urdfStore.totalMass,
@@ -406,6 +392,7 @@ const computedResults = ref<ResultRow[]>([]);
 
 function openInertiaPanel(): void {
   inertiaPanelVisible.value = true;
+  refreshRestInverses();
 
   const hasExisting = urdfStore.robot.links.some((l) => l.solidIds.length > 0 && l.inertial);
   if (!hasExisting) {
@@ -606,6 +593,7 @@ async function runCompute(silent = false): Promise<void> {
 
     computedResults.value = newResults;
     syncLockFlags();
+    refreshRestInverses();
 
     if (!silent) {
       const hint = lockedMass.size > 0 ? `（已锁定 ${lockedMass.size} 个 Solid 的质量）` : "";
@@ -831,7 +819,6 @@ function applyResults(): void {
 
 .fk-floating-panel {
   position: fixed;
-  z-index: 2000;
   width: 320px;
   max-height: 420px;
   display: flex;
@@ -852,6 +839,7 @@ function applyResults(): void {
   border-bottom: 1px solid var(--line-strong);
   cursor: move;
   user-select: none;
+  touch-action: none;
   flex-shrink: 0;
 }
 

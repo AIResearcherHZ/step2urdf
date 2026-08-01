@@ -204,11 +204,15 @@ export const useURDFStore = defineStore("urdf", () => {
     return robot.value.joints.filter((j) => j.type !== "fixed");
   });
 
-  const boundSolidIds = computed(() => {
-    const ids = new Set<string>();
-    robot.value.links.forEach((l) => l.solidIds.forEach((id) => ids.add(id)));
-    return ids;
+  const solidLinkMap = computed(() => {
+    const map = new Map<string, string>();
+    for (const link of robot.value.links) {
+      for (const id of link.solidIds) map.set(id, link.id);
+    }
+    return map;
   });
+
+  const boundSolidIds = computed(() => new Set(solidLinkMap.value.keys()));
 
   function isBaseLink(linkId: string): boolean {
     return linkId === BASE_LINK_ID;
@@ -675,6 +679,9 @@ export const useURDFStore = defineStore("urdf", () => {
       margin: cfg.margin,
       minScale: cfg.minScale,
       deltaConfigs,
+      adjacentPairs: robot.value.joints.map(
+        (j) => [j.parentLinkId, j.childLinkId] as [string, string],
+      ),
     });
 
     collisionShapes.value = result.shapes;
@@ -771,6 +778,7 @@ export const useURDFStore = defineStore("urdf", () => {
     leafLinks,
     activeJoints,
     boundSolidIds,
+    solidLinkMap,
     treeData,
 
     isBaseLink,

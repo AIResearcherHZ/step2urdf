@@ -103,24 +103,6 @@ export class CollisionVisualizer {
         geo.rotateX(Math.PI / 2);
         return geo;
       }
-      case "convex": {
-        if (!shape.hull) return null;
-        const local = shapeLocalMatrix(shape).invert();
-        const positions = new Float32Array(shape.hull.positions.length);
-        const v = new THREE.Vector3();
-        for (let i = 0; i < shape.hull.positions.length; i += 3) {
-          v.set(shape.hull.positions[i], shape.hull.positions[i + 1], shape.hull.positions[i + 2]);
-          v.applyMatrix4(local);
-          positions[i] = v.x;
-          positions[i + 1] = v.y;
-          positions[i + 2] = v.z;
-        }
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-        geo.setIndex(new THREE.BufferAttribute(shape.hull.indices, 1));
-        geo.computeVertexNormals();
-        return geo;
-      }
       default:
         return null;
     }

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { URDFRobot, URDFJoint, URDFLink, CollisionShape } from "../types";
 import { rotateInertiaTensor } from "./ZUpTransform";
+import { escapeXml, fmtNum, fmtVec3, fmtVec4 } from "./xmlFormat";
 
 export interface MJCFSerializeOptions {
   linkRestInverses?: Map<string, THREE.Matrix4>;
@@ -46,16 +47,6 @@ export function serializeMJCF(robot: URDFRobot, options?: MJCFSerializeOptions):
   out.push("  <asset>");
   for (const name of meshLinks) {
     out.push(`    <mesh name="${escapeXml(name)}" file="${escapeXml(name)}.stl"/>`);
-  }
-  if (options?.collisionShapes) {
-    for (const link of robot.links) {
-      const shape = options.collisionShapes.get(link.id);
-      if (shape?.type === "convex") {
-        out.push(
-          `    <mesh name="${escapeXml(link.name)}_collision" file="${escapeXml(link.name)}_collision.stl"/>`,
-        );
-      }
-    }
   }
   out.push("  </asset>");
 
@@ -152,10 +143,6 @@ export function serializeMJCF(robot: URDFRobot, options?: MJCFSerializeOptions):
 
   function collisionGeom(shape: CollisionShape, link: URDFLink): string {
     const name = `${escapeXml(link.name)}_col`;
-
-    if (shape.type === "convex") {
-      return `<geom name="${name}" type="mesh" mesh="${escapeXml(link.name)}_collision" group="3" rgba="0.2 0.8 0.4 0.4"/>`;
-    }
 
     const restInverse = options?.linkRestInverses?.get(link.id);
     const m = new THREE.Matrix4().makeRotationFromQuaternion(
@@ -325,25 +312,4 @@ function applyMatrix(m: THREE.Matrix4, v: [number, number, number]): [number, nu
     e[1] * v[0] + e[5] * v[1] + e[9] * v[2] + e[13],
     e[2] * v[0] + e[6] * v[1] + e[10] * v[2] + e[14],
   ];
-}
-
-function fmtNum(n: number): string {
-  return Number.isFinite(n) ? parseFloat(n.toFixed(8)).toString() : "0";
-}
-
-function fmtVec3(v: number[]): string {
-  return `${fmtNum(v[0])} ${fmtNum(v[1])} ${fmtNum(v[2])}`;
-}
-
-function fmtVec4(v: number[]): string {
-  return `${fmtNum(v[0])} ${fmtNum(v[1])} ${fmtNum(v[2])} ${fmtNum(v[3])}`;
-}
-
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
 }

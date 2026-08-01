@@ -134,7 +134,6 @@ const typeLabel: Record<string, string> = {
   box: "Box",
   cylinder: "Cylinder",
   sphere: "Sphere",
-  convex: "Convex",
 };
 
 const rows = computed(() =>

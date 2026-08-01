@@ -32,7 +32,7 @@ import {
 } from "./opfs";
 import { decodeGeometryCache, encodeGeometryCache } from "./geometryCache";
 import { packProject, saveProjectFile, unpackProject } from "./projectFile";
-import { clearSiteCache, measureSiteCache, type SiteCacheReport } from "./siteCache";
+import { clearSiteCache, measureSiteCache } from "./siteCache";
 import {
   applyUrdfSection,
   applyViewportSection,
@@ -428,78 +428,56 @@ export function useProjectPersistence(host: PersistenceHost) {
     draft.value = null;
   }
 
+  async function geometryCacheSizes(): Promise<{ id: string; size: number }[]> {
+    if (!available.value) return [];
+    const ids = await listProjectIds();
+    const sizes = await Promise.all(ids.map((id) => projectFileSize(id, FILE_GEOMETRY)));
+    return ids.map((id, i) => ({ id, size: sizes[i] })).filter((entry) => entry.size > 0);
+  }
+
   async function measureGeometryCache(): Promise<{ bytes: number; count: number }> {
-    if (!available.value) return { bytes: 0, count: 0 };
-    let bytes = 0;
-    let count = 0;
-    for (const id of await listProjectIds()) {
-      const size = await projectFileSize(id, FILE_GEOMETRY);
-      if (size > 0) {
-        bytes += size;
-        count++;
-      }
-    }
-    return { bytes, count };
+    const entries = await geometryCacheSizes();
+    return {
+      bytes: entries.reduce((sum, entry) => sum + entry.size, 0),
+      count: entries.length,
+    };
   }
 
   async function clearGeometryCache(): Promise<number> {
-    if (!available.value) return 0;
-    let removed = 0;
-    for (const id of await listProjectIds()) {
-      const size = await projectFileSize(id, FILE_GEOMETRY);
-      if (size === 0) continue;
-      await withProjectLock(id, async () => {
-        await removeProjectFile(id, FILE_GEOMETRY);
-      });
-      removed++;
-    }
-    return removed;
+    const entries = await geometryCacheSizes();
+    await Promise.all(
+      entries.map(({ id }) => withProjectLock(id, () => removeProjectFile(id, FILE_GEOMETRY))),
+    );
+    return entries.length;
   }
 
-  async function resetSite(): Promise<SiteCacheReport> {
+  function resetLocalState(): void {
     if (debounceTimer) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
+    context.value = null;
+    draft.value = null;
+    projects.value = [];
+    lastSavedAt.value = null;
+  }
+
+  async function resetSite(): Promise<string[]> {
     suspended.value = true;
-
     try {
-      if (available.value) {
-        try {
-          await clearAllProjectDirs();
-        } catch (error) {
-          console.warn("清理 OPFS 失败:", error);
-        }
-      }
-
+      resetLocalState();
       closeDatabase();
-
-      const report = await clearSiteCache();
-
-      context.value = null;
-      draft.value = null;
-      projects.value = [];
-      lastSavedAt.value = null;
-
-      return report;
+      return await clearSiteCache();
     } finally {
       suspended.value = false;
     }
   }
 
   async function clearAllData(): Promise<void> {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
     suspended.value = true;
     try {
-      await clearAllProjects();
-      await clearAllProjectDirs();
-      context.value = null;
-      draft.value = null;
-      projects.value = [];
-      lastSavedAt.value = null;
+      resetLocalState();
+      await Promise.all([clearAllProjects(), available.value ? clearAllProjectDirs() : null]);
     } finally {
       suspended.value = false;
     }

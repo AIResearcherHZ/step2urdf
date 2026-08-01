@@ -129,8 +129,13 @@
 
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from "vue";
-import { ElMessageBox } from "element-plus";
-import { FolderOpened, Download, Box, Delete, ArrowDown } from "@element-plus/icons-vue";
+import { confirmDialog, promptDialog } from "../utils/dialog";
+
+import FolderOpened from "~icons/ep/folder-opened";
+import Download from "~icons/ep/download";
+import Box from "~icons/ep/box";
+import Delete from "~icons/ep/delete";
+import ArrowDown from "~icons/ep/arrow-down";
 import type { ProjectRecord } from "../persistence/types";
 import { formatBytes, formatCount, formatRelativeTime } from "../utils/format";
 
@@ -198,7 +203,7 @@ function handleFileChange(event: Event): void {
 
 async function startRename(project: ProjectRecord): Promise<void> {
   try {
-    const { value } = await ElMessageBox.prompt("请输入新的项目名称", "重命名项目", {
+    const { value } = await promptDialog("请输入新的项目名称", "重命名项目", {
       inputValue: project.name,
       inputValidator: (v: string) => (v.trim().length > 0 ? true : "名称不能为空"),
       confirmButtonText: "确定",
@@ -210,7 +215,7 @@ async function startRename(project: ProjectRecord): Promise<void> {
 
 async function confirmRemove(project: ProjectRecord): Promise<void> {
   try {
-    await ElMessageBox.confirm(
+    await confirmDialog(
       `将永久删除项目「${project.name}」及其缓存的模型数据，此操作不可撤销。`,
       "删除项目",
       { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" },

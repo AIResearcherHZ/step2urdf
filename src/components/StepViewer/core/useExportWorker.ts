@@ -7,6 +7,8 @@ const client = createWorkerClient<ExportWorkerApi>(
   () => new Worker(new URL("./ExportWorker.ts", import.meta.url), { type: "module" }),
 );
 
+let pending = 0;
+
 export async function exportURDFInWorker(
   urdfXml: string,
   linkSolidMap: Record<string, SerializedSolidData[]>,
@@ -14,19 +16,23 @@ export async function exportURDFInWorker(
   unitScale: number,
   onProgress?: (stage: string, percent: number) => void,
   extraFiles?: Record<string, string>,
-  collisionMeshMap?: Record<string, { positions: Float32Array; indices: Uint32Array }>,
-): Promise<ArrayBuffer> {
-  return client
-    .get()
-    .exportURDF(
-      urdfXml,
-      linkSolidMap,
-      linkRestInverseMap,
-      unitScale,
-      onProgress ? Comlink.proxy(onProgress) : undefined,
-      extraFiles,
-      collisionMeshMap,
-    );
+): Promise<Blob> {
+  pending++;
+  try {
+    return await client
+      .get()
+      .exportURDF(
+        urdfXml,
+        linkSolidMap,
+        linkRestInverseMap,
+        unitScale,
+        onProgress ? Comlink.proxy(onProgress) : undefined,
+        extraFiles,
+      );
+  } finally {
+    pending--;
+    if (pending === 0) client.dispose();
+  }
 }
 
 export function disposeExportWorker(): void {

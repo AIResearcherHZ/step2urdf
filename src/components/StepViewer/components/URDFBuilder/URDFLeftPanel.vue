@@ -137,14 +137,23 @@
       <el-button type="primary" :icon="Share" @click="goToURDFCC"> URDF Studio 预览 </el-button>
     </div>
 
-    <div class="resize-handle" @mousedown.prevent="startResize" />
+    <div class="resize-handle" @pointerdown.prevent="startResize" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, nextTick } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Edit, Delete, Download, Box, Share, Paperclip, Cpu } from "@element-plus/icons-vue";
+import { confirmDialog } from "../../utils/dialog";
+import { useEdgeResize } from "../composables/useFloatingPanel";
+import { ElMessage } from "element-plus";
+import Plus from "~icons/ep/plus";
+import Edit from "~icons/ep/edit";
+import Delete from "~icons/ep/delete";
+import Download from "~icons/ep/download";
+import Box from "~icons/ep/box";
+import Share from "~icons/ep/share";
+import Paperclip from "~icons/ep/paperclip";
+import Cpu from "~icons/ep/cpu";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import type { URDFTreeNode } from "../../stores/useURDFStore";
@@ -162,6 +171,7 @@ const urdfStore = useURDFStore();
 const stepStore = useStepViewerStore();
 const treeRef = ref<any>();
 const panelWidth = ref(330);
+const { startResize } = useEdgeResize(panelWidth, { min: 200, max: 500 });
 
 const editingId = ref<string | null>(null);
 const editingName = ref("");
@@ -271,7 +281,7 @@ function cancelRename(): void {
 
 function handleDeleteLink(data: URDFTreeNode): void {
   if (guardActiveMode()) return;
-  ElMessageBox.confirm(`确定删除连杆 "${data.label}"？关联的关节将被级联删除。`, "删除确认", {
+  confirmDialog(`确定删除连杆 "${data.label}"？关联的关节将被级联删除。`, "删除确认", {
     type: "warning",
     confirmButtonText: "删除",
     cancelButtonText: "取消",
@@ -304,24 +314,6 @@ function getJointTagType(type?: JointType): "primary" | "success" | "info" | "wa
     floating: "danger",
   };
   return map[type ?? ""] ?? "info";
-}
-
-function startResize(e: MouseEvent): void {
-  const startX = e.clientX;
-  const startWidth = panelWidth.value;
-  const onMove = (ev: MouseEvent) => {
-    panelWidth.value = Math.max(200, Math.min(500, startWidth + ev.clientX - startX));
-  };
-  const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  };
-  document.body.style.cursor = "col-resize";
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
 }
 
 function setCurrentNodeById(id: string): void {

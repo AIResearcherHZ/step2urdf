@@ -55,7 +55,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { Connection } from "@element-plus/icons-vue";
+import Connection from "~icons/ep/connection";
 import { useURDFStore } from "../../stores/useURDFStore";
 import URDFJointProperties from "./URDFJointProperties.vue";
 import URDFLinkProperties from "./URDFLinkProperties.vue";

@@ -161,40 +161,41 @@
             <div class="prop-row">
               <span class="prop-label">质心</span>
               <span class="prop-value">
-                {{ link.inertial.com.map((v) => v.toFixed(2)).join(", ") }} mm
+                {{ localInertial!.com.map((v) => v.toFixed(2)).join(", ") }} mm
               </span>
             </div>
             <div class="prop-row">
               <span class="prop-label" title="惯量主轴姿态，顺序 w, x, y, z">quat</span>
               <span class="prop-value">
-                {{ formatQuat(link.inertial.inertia) }}
+                {{ formatQuat(localInertial!.inertia) }}
               </span>
             </div>
             <div class="inertia-grid">
-              <span class="inertia-title">惯性张量（kg·m²）</span>
+              <span class="inertia-title">惯性张量（kg·m²，连杆系）</span>
               <div class="inertia-row">
                 <span class="inertia-cell"
-                  >Ixx: {{ link.inertial.inertia[0].toExponential(3) }}</span
+                  >Ixx: {{ localInertial!.inertia[0].toExponential(3) }}</span
                 >
                 <span class="inertia-cell"
-                  >Ixy: {{ link.inertial.inertia[1].toExponential(3) }}</span
+                  >Ixy: {{ localInertial!.inertia[1].toExponential(3) }}</span
                 >
                 <span class="inertia-cell"
-                  >Ixz: {{ link.inertial.inertia[2].toExponential(3) }}</span
+                  >Ixz: {{ localInertial!.inertia[2].toExponential(3) }}</span
                 >
               </div>
               <div class="inertia-row">
                 <span class="inertia-cell"
-                  >Iyy: {{ link.inertial.inertia[3].toExponential(3) }}</span
+                  >Iyy: {{ localInertial!.inertia[3].toExponential(3) }}</span
                 >
                 <span class="inertia-cell"
-                  >Iyz: {{ link.inertial.inertia[4].toExponential(3) }}</span
+                  >Iyz: {{ localInertial!.inertia[4].toExponential(3) }}</span
                 >
                 <span class="inertia-cell"
-                  >Izz: {{ link.inertial.inertia[5].toExponential(3) }}</span
+                  >Izz: {{ localInertial!.inertia[5].toExponential(3) }}</span
                 >
               </div>
             </div>
+            <p class="frame-hint">质心 / quat / 张量均为该连杆自身坐标系下的值，与导出结果一致</p>
           </template>
           <div v-else class="empty-hint">请使用左侧「整机惯量计算」功能统一计算</div>
         </div>
@@ -207,13 +208,20 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
+import { isDialogDismissed, promptDialog } from "../../utils/dialog";
 import { vHint } from "../composables/useHintBar";
-import { ElMessage, ElMessageBox } from "element-plus";
-import { Files, Delete, Paperclip, Scissor, Connection, EditPen } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
+import Files from "~icons/ep/files";
+import Delete from "~icons/ep/delete";
+import Paperclip from "~icons/ep/paperclip";
+import Scissor from "~icons/ep/scissor";
+import Connection from "~icons/ep/connection";
+import EditPen from "~icons/ep/edit-pen";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import { useGeometryEditApi } from "../composables/useGeometryEdit";
 import { principalAxisQuat } from "../../core/useInertiaWorker";
+import { buildLinkRestInverses, toLinkLocalInertial } from "../../core/InertiaFrame";
 import type { InertialParams } from "../../types";
 
 function formatQuat(inertia: InertialParams["inertia"]): string {
@@ -281,6 +289,17 @@ const link = computed(() => {
   return urdfStore.linkMap.get(urdfStore.selectedLinkId) ?? null;
 });
 
+const localInertial = computed<InertialParams | null>(() => {
+  const current = link.value;
+  if (!current?.inertial) return null;
+  const restInverse = buildLinkRestInverses(urdfStore.robot, {
+    baseLinkId: urdfStore.BASE_LINK_ID,
+    baseLinkOrigin: urdfStore.baseLinkOrigin,
+    baseLinkRPY: urdfStore.baseLinkRPY,
+  }).get(current.id);
+  return toLinkLocalInertial(current.inertial, restInverse);
+});
+
 watch(
   () => urdfStore.selectedLinkId,
   () => {
@@ -302,17 +321,21 @@ function toggleFocus(solidId: string): void {
 
 async function handleRenameSolid(solidId: string): Promise<void> {
   try {
-    const { value } = await ElMessageBox.prompt("输入新的 Solid 名称", "重命名 Solid", {
+    const { value } = await promptDialog("输入新的 Solid 名称", "重命名 Solid", {
       confirmButtonText: "确定",
       cancelButtonText: "取消",
       inputValue: getSolidName(solidId),
       inputValidator: (v: string) => (v && v.trim().length > 0 ? true : "名称不能为空"),
     });
-    if (stepStore.renameSolid(solidId, value)) {
+    if (geometryEdit?.renameSolid(solidId, value) ?? stepStore.renameSolid(solidId, value)) {
       ElMessage.success(`已重命名为「${value.trim()}」`);
+    } else {
+      ElMessage.info("名称未变化");
     }
-  } catch {
-    return;
+  } catch (error) {
+    if (!isDialogDismissed(error)) {
+      ElMessage.error(`重命名失败：${(error as Error)?.message ?? error}`);
+    }
   }
 }
 
@@ -403,7 +426,7 @@ function autoCalcOrigin(): void {
   margin-bottom: 8px;
 
   .link-icon {
-    color: #409eff;
+    color: var(--accent);
     font-size: 14px;
     flex-shrink: 0;
   }
@@ -419,7 +442,7 @@ function autoCalcOrigin(): void {
     white-space: nowrap;
 
     &:hover {
-      color: #409eff;
+      color: var(--accent);
     }
   }
 }
@@ -486,6 +509,12 @@ function autoCalcOrigin(): void {
   }
 }
 
+.frame-hint {
+  margin: 4px 0 0;
+  font-size: 10px;
+  color: var(--text-2);
+}
+
 .solid-item {
   display: flex;
   align-items: center;
@@ -512,11 +541,11 @@ function autoCalcOrigin(): void {
   }
 
   &.is-focused {
-    background: #ecf5ff;
-    border-color: #409eff;
+    background: var(--el-color-primary-light-9);
+    border-color: var(--accent);
 
     .solid-name {
-      color: #409eff;
+      color: var(--accent);
       font-weight: 600;
     }
   }

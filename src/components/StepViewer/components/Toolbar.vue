@@ -8,7 +8,9 @@
               ? '选择并导入 STEP / STP / STL 模型文件'
               : 'OpenCASCADE 引擎加载中，STL 可直接导入'
           "
+          class="primary-action"
           type="primary"
+          size="small"
           :loading="isLoading"
           :icon="UploadFilled"
           :disabled="isLoading"
@@ -16,20 +18,26 @@
         >
           {{ isLoading ? "加载中..." : "导入模型" }}
         </el-button>
-        <el-button
-          v-hint="'导入 URDF / MJCF(xml)，重建连杆-关节树与闭链约束，可随后替换 STEP 几何'"
-          :icon="Share"
-          @click="$emit('importRobot')"
-        >
-          导入结构
-        </el-button>
-        <el-button
-          v-hint="'拖入整个机器人文件夹（URDF/MJCF + meshes），选择描述文件后直接装配并可视化'"
-          :icon="FolderAdd"
-          @click="$emit('importRobotPackage')"
-        >
-          导入机器人包
-        </el-button>
+        <div class="tb-group">
+          <el-button
+            v-hint="'导入 URDF / MJCF(xml)，重建连杆-关节树与闭链约束，可随后替换 STEP 几何'"
+            size="small"
+            text
+            :icon="Share"
+            @click="$emit('importRobot')"
+          >
+            导入结构
+          </el-button>
+          <el-button
+            v-hint="'拖入整个机器人文件夹（URDF/MJCF + meshes），选择描述文件后直接装配并可视化'"
+            size="small"
+            text
+            :icon="FolderAdd"
+            @click="$emit('importRobotPackage')"
+          >
+            导入机器人包
+          </el-button>
+        </div>
         <div v-if="!occtReady" class="wasm-progress">
           <el-progress
             :percentage="Math.round(occtLoadProgress ?? 0)"
@@ -40,23 +48,28 @@
             >OpenCASCADE WASM 加载中 ({{ Math.round(occtLoadProgress ?? 0) }}%)</span
           >
         </div>
-        <el-button
-          v-hint="'打开已保存的项目，或导入 .miles 项目文件'"
-          :icon="FolderOpened"
-          @click="$emit('openProjects')"
-        >
-          项目
-        </el-button>
-        <el-button
-          v-if="hasModel"
-          v-hint="autosaveHint || '把当前会话保存为项目'"
-          :icon="Select"
-          :loading="projectSaving"
-          text
-          @click="$emit('saveProject')"
-        >
-          {{ projectSaving ? "保存中" : "保存项目" }}
-        </el-button>
+        <div class="tb-group">
+          <el-button
+            v-hint="'打开已保存的项目，或导入 .miles 项目文件'"
+            size="small"
+            text
+            :icon="FolderOpened"
+            @click="$emit('openProjects')"
+          >
+            项目
+          </el-button>
+          <el-button
+            v-if="hasModel"
+            v-hint="autosaveHint || '把当前会话保存为项目'"
+            size="small"
+            text
+            :icon="Select"
+            :loading="projectSaving"
+            @click="$emit('saveProject')"
+          >
+            {{ projectSaving ? "保存中" : "保存项目" }}
+          </el-button>
+        </div>
         <span v-if="fileName" class="file-name" :title="fileName">{{ fileName }}</span>
       </div>
 
@@ -192,115 +205,130 @@
       </el-dialog>
     </div>
     <div class="toolbar-center" v-if="hasModel">
-      <el-button
-        v-hint="'显示 / 隐藏世界坐标轴'"
-        :type="showAxes ? 'primary' : 'default'"
-        text
-        @click="$emit('toggleAxes')"
-      >
-        轴
-      </el-button>
-      <el-button
-        v-hint="'显示 / 隐藏地面网格'"
-        :type="showGrid ? 'primary' : 'default'"
-        text
-        @click="$emit('toggleGrid')"
-      >
-        网格
-      </el-button>
-      <div class="opacity-control" v-hint="'调整模型整体不透明度，便于观察内部结构'">
-        <span class="opacity-label">透明度</span>
-        <el-slider
-          v-model="localOpacity"
-          :min="0"
-          :max="100"
-          :step="5"
-          :show-tooltip="true"
-          :format-tooltip="(val: any) => `${val}%`"
-          @change="handleOpacityInput"
-          style="width: 100px"
-        />
+      <div class="tb-group">
+        <el-button
+          v-hint="'显示 / 隐藏世界坐标轴'"
+          size="small"
+          :type="showAxes ? 'primary' : 'default'"
+          text
+          @click="$emit('toggleAxes')"
+        >
+          轴
+        </el-button>
+        <el-button
+          v-hint="'显示 / 隐藏地面网格'"
+          size="small"
+          :type="showGrid ? 'primary' : 'default'"
+          text
+          @click="$emit('toggleGrid')"
+        >
+          网格
+        </el-button>
+        <div class="opacity-control" v-hint="'调整模型整体不透明度，便于观察内部结构'">
+          <span class="opacity-label">透明度</span>
+          <el-slider
+            v-model="localOpacity"
+            :min="0"
+            :max="100"
+            :step="5"
+            :show-tooltip="true"
+            :format-tooltip="(val: any) => `${val}%`"
+            @change="handleOpacityInput"
+            style="width: 96px"
+          />
+        </div>
       </div>
 
-      <el-divider direction="vertical" />
-
-      <el-button
-        v-hint="'在模型或空间中点击两点画直线，自动计算距离'"
-        :type="isLineMeasureActive ? 'warning' : 'default'"
-        text
-        @click="$emit('toggleLineMeasure')"
-      >
-        画线测量
-      </el-button>
-
-      <el-divider direction="vertical" />
-
-      <el-button
-        v-hint="'打开 / 关闭模型结构树面板'"
-        :type="isModelTreeOpen ? 'primary' : 'default'"
-        text
-        @click="$emit('toggleModelTree')"
-      >
-        模型树
-      </el-button>
+      <div class="tb-group">
+        <el-button
+          v-hint="'在模型或空间中点击两点画直线，自动计算距离'"
+          size="small"
+          :type="isLineMeasureActive ? 'warning' : 'default'"
+          text
+          @click="$emit('toggleLineMeasure')"
+        >
+          画线测量
+        </el-button>
+        <el-button
+          v-hint="'打开 / 关闭模型结构树面板'"
+          size="small"
+          :type="isModelTreeOpen ? 'primary' : 'default'"
+          text
+          @click="$emit('toggleModelTree')"
+        >
+          模型树
+        </el-button>
+      </div>
     </div>
 
     <div class="toolbar-right" v-if="hasModel">
-      <el-button
-        v-hint="'清除当前的实体与特征选择'"
-        :disabled="!hasSelection"
-        text
-        @click="$emit('clearSelection')"
-      >
-        取消选择
-      </el-button>
-      <el-tooltip content="适应窗口" placement="bottom" :show-after="600">
-        <el-button v-hint="'缩放相机使整个模型充满视口'" :icon="Aim" @click="$emit('fitView')" />
-      </el-tooltip>
-      <el-tooltip content="重置视图" placement="bottom" :show-after="600">
+      <div class="tb-group">
         <el-button
-          v-hint="'恢复默认相机角度与缩放'"
-          :icon="RefreshRight"
-          @click="$emit('resetView')"
-        />
-      </el-tooltip>
-      <el-divider direction="vertical" />
-      <el-button
-        v-hint="'显示 / 隐藏帧率与渲染统计面板'"
-        :type="showStats ? 'warning' : 'default'"
-        :icon="DataLine"
-        text
-        @click="$emit('toggleStats')"
-      >
-        FPS
-      </el-button>
-
-      <el-divider direction="vertical" />
-
-      <el-tooltip content="GitHub 仓库" placement="bottom" :show-after="600">
-        <el-button
-          v-hint="'在新标签页打开 step2urdf 的 GitHub 仓库'"
-          class="github-btn"
+          v-hint="'清除当前的实体与特征选择'"
+          size="small"
+          :disabled="!hasSelection"
           text
-          @click="openGitHub"
+          @click="$emit('clearSelection')"
         >
-          <svg
-            class="github-icon"
-            viewBox="0 0 1024 1024"
-            width="18"
-            height="18"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fill-rule="evenodd"
-              clip-rule="evenodd"
-              d="M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.73 6.56 11.53C4.78 11.33 2.92 10.64 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.33 9.47 11.53C9.76 11.78 10.01 12.26 10.01 13.01C10.01 14.08 10 14.94 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z"
-              transform="scale(64)"
-              fill="currentColor"
-            />
-          </svg>
+          取消选择
         </el-button>
-      </el-tooltip>
+        <el-tooltip content="适应窗口" placement="bottom" :show-after="600">
+          <el-button
+            v-hint="'缩放相机使整个模型充满视口'"
+            size="small"
+            text
+            :icon="Aim"
+            @click="$emit('fitView')"
+          />
+        </el-tooltip>
+        <el-tooltip content="重置视图" placement="bottom" :show-after="600">
+          <el-button
+            v-hint="'恢复默认相机角度与缩放'"
+            size="small"
+            text
+            :icon="RefreshRight"
+            @click="$emit('resetView')"
+          />
+        </el-tooltip>
+      </div>
+
+      <div class="tb-group">
+        <el-button
+          v-hint="'显示 / 隐藏帧率与渲染统计面板'"
+          size="small"
+          :type="showStats ? 'warning' : 'default'"
+          :icon="DataLine"
+          text
+          @click="$emit('toggleStats')"
+        >
+          FPS
+        </el-button>
+        <el-tooltip content="GitHub 仓库" placement="bottom" :show-after="600">
+          <el-button
+            v-hint="'在新标签页打开 step2urdf 的 GitHub 仓库'"
+            class="github-btn"
+            size="small"
+            text
+            @click="openGitHub"
+          >
+            <svg
+              class="github-icon"
+              viewBox="0 0 1024 1024"
+              width="16"
+              height="16"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                fill-rule="evenodd"
+                clip-rule="evenodd"
+                d="M8 0C3.58 0 0 3.58 0 8C0 11.54 2.29 14.53 5.47 15.59C5.87 15.66 6.02 15.42 6.02 15.21C6.02 15.02 6.01 14.39 6.01 13.72C4 14.09 3.48 13.23 3.32 12.78C3.23 12.55 2.84 11.84 2.5 11.65C2.22 11.5 1.82 11.13 2.49 11.12C3.12 11.11 3.57 11.7 3.72 11.94C4.44 13.15 5.59 12.81 6.05 12.6C6.12 12.08 6.33 11.73 6.56 11.53C4.78 11.33 2.92 10.64 2.92 7.58C2.92 6.71 3.23 5.99 3.74 5.43C3.66 5.23 3.38 4.41 3.82 3.31C3.82 3.31 4.49 3.1 6.02 4.13C6.66 3.95 7.34 3.86 8.02 3.86C8.7 3.86 9.38 3.95 10.02 4.13C11.55 3.09 12.22 3.31 12.22 3.31C12.66 4.41 12.38 5.23 12.3 5.43C12.81 5.99 13.12 6.7 13.12 7.58C13.12 10.65 11.25 11.33 9.47 11.53C9.76 11.78 10.01 12.26 10.01 13.01C10.01 14.08 10 14.94 10 15.21C10 15.42 10.15 15.67 10.55 15.59C13.71 14.53 16 11.53 16 8C16 3.58 12.42 0 8 0Z"
+                transform="scale(64)"
+                fill="currentColor"
+              />
+            </svg>
+          </el-button>
+        </el-tooltip>
+      </div>
     </div>
   </div>
 </template>
@@ -312,19 +340,17 @@ import { vHint } from "./composables/useHintBar";
 import { formatBytes } from "../utils/format";
 import type { UploadFile, UploadInstance } from "element-plus";
 import type { MeshUnit, ModelUploadOptions } from "../types";
-import {
-  UploadFilled,
-  Aim,
-  RefreshRight,
-  DataLine,
-  Document,
-  Close,
-  CircleCheckFilled,
-  FolderOpened,
-  Select,
-  Share,
-  FolderAdd,
-} from "@element-plus/icons-vue";
+import UploadFilled from "~icons/ep/upload-filled";
+import Aim from "~icons/ep/aim";
+import RefreshRight from "~icons/ep/refresh-right";
+import DataLine from "~icons/ep/data-line";
+import Document from "~icons/ep/document";
+import Close from "~icons/ep/close";
+import CircleCheckFilled from "~icons/ep/circle-check-filled";
+import FolderOpened from "~icons/ep/folder-opened";
+import Select from "~icons/ep/select";
+import Share from "~icons/ep/share";
+import FolderAdd from "~icons/ep/folder-add";
 
 const props = defineProps<{
   fileName: string;
@@ -442,6 +468,8 @@ function handleOpacityInput(val: number | number[]): void {
 function openGitHub(): void {
   window.open("https://github.com/AIResearcherHZ/step2urdf", "_blank", "noopener,noreferrer");
 }
+
+defineExpose({ openUploadDialog });
 </script>
 
 <style lang="scss" scoped>
@@ -449,12 +477,12 @@ function openGitHub(): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 7px 14px;
   background: rgba(255, 255, 255, 0.94);
   border-bottom: 1px solid var(--line);
-  gap: 12px;
-  min-height: 52px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  gap: 14px;
+  min-height: 48px;
+  box-shadow: 0 1px 0 var(--line);
   z-index: 30;
 
   .toolbar-left,
@@ -462,7 +490,7 @@ function openGitHub(): void {
   .toolbar-right {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
   }
 
   .toolbar-left {
@@ -473,36 +501,59 @@ function openGitHub(): void {
     flex: 1;
     justify-content: center;
     flex-wrap: wrap;
-    width: max-content;
-    max-width: 720px;
-    padding: 3px 6px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--surface-2);
+    min-width: 0;
   }
 
   .toolbar-right {
     flex-shrink: 0;
   }
 
+  .tb-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    box-shadow: inset 0 0 0 1px var(--line);
+
+    :deep(.el-button.is-text) {
+      background: transparent;
+      border-color: transparent;
+    }
+
+    :deep(.el-button.is-text:not(.is-disabled):hover) {
+      background: var(--surface-1);
+      border-color: var(--line);
+    }
+
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
+  }
+
+  .primary-action {
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(26, 33, 29, 0.12);
+  }
+
   .toolbar-section {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
 
     .file-name {
-      margin-left: 6px;
+      padding: 3px 9px;
       font-size: 12px;
       color: var(--text-2);
-      max-width: 160px;
+      background: var(--surface-3);
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px var(--line);
+      max-width: 180px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-  }
-
-  .sidebar-toggle {
-    padding: 6px;
   }
 
   .el-divider--vertical {
@@ -518,23 +569,6 @@ function openGitHub(): void {
     .opacity-label {
       font-size: 12px;
       color: var(--text-3);
-      white-space: nowrap;
-    }
-
-    .el-slider {
-      --el-slider-height: 4px;
-      --el-slider-button-size: 14px;
-    }
-  }
-
-  .axis-scale-control {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-
-    .axis-scale-label {
-      font-size: 12px;
-      color: #606266;
       white-space: nowrap;
     }
 
@@ -610,7 +644,11 @@ function openGitHub(): void {
     width: 68px;
     height: 68px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #ecf5ff 0%, #e1efff 100%);
+    background: linear-gradient(
+      135deg,
+      var(--el-color-primary-light-9) 0%,
+      var(--el-color-primary-light-9) 100%
+    );
     display: flex;
     align-items: center;
     justify-content: center;
@@ -621,7 +659,7 @@ function openGitHub(): void {
 
     .uph-icon {
       font-size: 34px;
-      color: #409eff;
+      color: var(--accent);
       transition: color 0.2s;
     }
   }
@@ -640,7 +678,7 @@ function openGitHub(): void {
 
     .uph-browse {
       font-style: normal;
-      color: #409eff;
+      color: var(--accent);
       font-weight: 500;
     }
   }
@@ -668,7 +706,7 @@ function openGitHub(): void {
   background: linear-gradient(135deg, #f8fbff 0%, #f0f7ff 100%);
   border: 1px solid #c6e0ff;
   border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(232, 138, 22, 0.1);
 
   .sfc-icon-block {
     position: relative;
@@ -677,7 +715,7 @@ function openGitHub(): void {
 
     .sfc-doc-icon {
       font-size: 38px;
-      color: #409eff;
+      color: var(--accent);
     }
 
     .sfc-ext {
@@ -687,7 +725,7 @@ function openGitHub(): void {
       font-size: 8px;
       font-weight: 700;
       letter-spacing: 0.3px;
-      background: #409eff;
+      background: var(--accent);
       color: #fff;
       padding: 1px 4px;
       border-radius: 3px;
@@ -821,29 +859,33 @@ function openGitHub(): void {
       box-shadow 0.2s ease;
 
     &:hover {
-      border-color: #409eff;
+      border-color: var(--accent);
       background: #f5f9ff;
-      box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.08);
+      box-shadow: 0 0 0 3px rgba(232, 138, 22, 0.08);
 
       .uph-icon-wrap {
         transform: translateY(-3px);
-        box-shadow: 0 6px 16px rgba(64, 158, 255, 0.2);
+        box-shadow: 0 6px 16px rgba(232, 138, 22, 0.2);
       }
     }
 
     &.is-dragover {
-      border-color: #409eff;
+      border-color: var(--accent);
       border-style: solid;
-      background: linear-gradient(135deg, #ecf5ff 0%, #f0f8ff 100%);
-      box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.12);
+      background: linear-gradient(
+        135deg,
+        var(--el-color-primary-light-9) 0%,
+        var(--el-color-primary-light-9) 100%
+      );
+      box-shadow: 0 0 0 4px rgba(232, 138, 22, 0.12);
 
       .uph-icon-wrap {
         transform: translateY(-4px) scale(1.05);
-        box-shadow: 0 8px 20px rgba(64, 158, 255, 0.25);
+        box-shadow: 0 8px 20px rgba(232, 138, 22, 0.25);
       }
 
       .uph-icon {
-        color: #337ecc;
+        color: var(--accent-plain-text);
       }
     }
   }

@@ -15,6 +15,7 @@ export interface GeometryEditDeps {
   getSelectionManager: () => SelectionManager | null;
   disposeUrdfModules: () => void;
   initUrdfModules: () => void;
+  getCurrentTree?: () => SerializedTreeNode | null;
   onGeometryChanged?: (solids: SerializedSolidData[], tree: SerializedTreeNode) => void;
 }
 
@@ -38,6 +39,7 @@ export interface MergeResult {
 export interface GeometryEditApi {
   hasGeometry: () => boolean;
   currentSolidData: () => SerializedSolidData[];
+  renameSolid: (solidId: string, name: string) => boolean;
   rebuild: (dataList: SerializedSolidData[], options?: RebuildOptions) => SerializedTreeNode;
   splitSolids: (solidIds: string[], options?: MeshImportOptions) => Promise<SplitResult[]>;
   mergeSolids: (solidIds: string[], name?: string) => Promise<MergeResult>;
@@ -64,6 +66,16 @@ export function useGeometryEdit(deps: GeometryEditDeps): GeometryEditApi {
 
   function hasGeometry(): boolean {
     return store.solids.length > 0 && store.solids.every((s) => !!s.serializedData);
+  }
+
+  function assertGeometry(action: string): void {
+    if (store.solids.length === 0) throw new Error(`当前没有任何 Solid，无法${action}`);
+    const missing = store.solids.filter((s) => !s.serializedData);
+    if (missing.length === 0) return;
+    const names = missing.slice(0, 3).map((s) => s.name || s.id);
+    throw new Error(
+      `${missing.length} 个 Solid 缺少几何数据（${names.join("、")}${missing.length > 3 ? " 等" : ""}），无法${action}`,
+    );
   }
 
   function rebuild(dataList: SerializedSolidData[], options?: RebuildOptions): SerializedTreeNode {
@@ -112,6 +124,27 @@ export function useGeometryEdit(deps: GeometryEditDeps): GeometryEditApi {
     return tree;
   }
 
+  function findSerializedNode(node: SerializedTreeNode, nodeId: string): SerializedTreeNode | null {
+    if (node.id === nodeId) return node;
+    for (const child of node.children ?? []) {
+      const hit = findSerializedNode(child, nodeId);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function renameSolid(solidId: string, name: string): boolean {
+    if (!store.renameSolid(solidId, name)) return false;
+
+    const tree = deps.getCurrentTree?.() ?? null;
+    if (tree) {
+      const node = findSerializedNode(tree, store.treeNodeIdOfSolid(solidId));
+      if (node) node.name = name.trim();
+      deps.onGeometryChanged?.(currentSolidData(), tree);
+    }
+    return true;
+  }
+
   function remapVisibility(mapping: Map<string, string[]>): void {
     const next = new Map<string, boolean>();
     for (const [oldId, visible] of store.solidVisibilityMap) {
@@ -124,7 +157,7 @@ export function useGeometryEdit(deps: GeometryEditDeps): GeometryEditApi {
     solidIds: string[],
     options?: MeshImportOptions,
   ): Promise<SplitResult[]> {
-    if (!hasGeometry()) throw new Error("部分实体缺少几何数据，无法拆解");
+    assertGeometry("拆解");
 
     const ordered = currentSolidData();
     const idOfIndex = store.solids.map((s) => s.id);
@@ -184,7 +217,7 @@ export function useGeometryEdit(deps: GeometryEditDeps): GeometryEditApi {
   }
 
   async function mergeSolids(solidIds: string[], name?: string): Promise<MergeResult> {
-    if (!hasGeometry()) throw new Error("部分实体缺少几何数据，无法合并");
+    assertGeometry("合并");
     if (solidIds.length < 2) throw new Error("请至少选择两个 Solid");
 
     const ordered = currentSolidData();
@@ -195,7 +228,24 @@ export function useGeometryEdit(deps: GeometryEditDeps): GeometryEditApi {
     if (firstIndex < 0) throw new Error("未找到要合并的 Solid");
 
     const members = ordered.filter((_, i) => targets.has(idOfIndex[i]));
-    if (members.length < 2) throw new Error("请至少选择两个有效的 Solid");
+    if (members.length < 2) {
+      const unknown = solidIds.filter((id) => !store.solidMap.has(id));
+      throw new Error(
+        unknown.length > 0
+          ? `选中的 Solid 已不存在（${unknown.slice(0, 3).join("、")}），请重新选择`
+          : `只识别到 ${members.length} 个有效 Solid，至少需要两个`,
+      );
+    }
+
+    const ownerLinks = new Set<string>();
+    for (const id of targets) {
+      const linkId = urdfStore.solidLinkMap.get(id);
+      if (linkId) ownerLinks.add(linkId);
+    }
+    if (ownerLinks.size > 1) {
+      const names = Array.from(ownerLinks, (id) => urdfStore.linkMap.get(id)?.name ?? id);
+      throw new Error(`这些 Solid 分属不同连杆（${names.join("、")}），请先解绑或分别合并`);
+    }
 
     const mergedName = name?.trim() || members[0].name || "Merged";
     const merged = mergeSolidData(members, mergedName);
@@ -286,6 +336,7 @@ export function useGeometryEdit(deps: GeometryEditDeps): GeometryEditApi {
   const api: GeometryEditApi = {
     hasGeometry,
     currentSolidData,
+    renameSolid,
     rebuild,
     splitSolids,
     mergeSolids,

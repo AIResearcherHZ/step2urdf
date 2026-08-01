@@ -80,7 +80,7 @@ const statusClass = computed(() => {
   align-items: center;
   justify-content: center;
   background: rgba(250, 250, 247, 0.94);
-  z-index: 100;
+  z-index: var(--z-canvas-overlay);
 }
 
 .loading-content {

@@ -339,7 +339,7 @@ export interface RobotPackagePayload {
   warnings: string[];
 }
 
-export type CollisionShapeType = "box" | "cylinder" | "sphere" | "convex";
+export type CollisionShapeType = "box" | "cylinder" | "sphere";
 
 export type CollisionMode = "auto" | CollisionShapeType;
 
@@ -348,13 +348,7 @@ export const COLLISION_SHAPE_OPTIONS: { value: CollisionMode; label: string }[] 
   { value: "box", label: "Box（长方体）" },
   { value: "cylinder", label: "Cylinder（圆柱）" },
   { value: "sphere", label: "Sphere（球）" },
-  { value: "convex", label: "Convex（凸包网格）" },
 ];
-
-export interface CollisionHull {
-  positions: Float32Array;
-  indices: Uint32Array;
-}
 
 export interface CollisionShape {
   linkId: string;
@@ -364,7 +358,6 @@ export interface CollisionShape {
   halfExtents: [number, number, number];
   radius: number;
   height: number;
-  hull?: CollisionHull;
   meshVolume: number;
   shapeVolume: number;
   originalHalfExtents: [number, number, number];

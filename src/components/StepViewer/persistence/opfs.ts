@@ -11,13 +11,20 @@ export function isOpfsAvailable(): boolean {
   );
 }
 
+export function resetOpfsRoot(): void {
+  rootPromise = null;
+}
+
 async function getRoot(): Promise<FileSystemDirectoryHandle> {
   if (!rootPromise) {
     rootPromise = (async () => {
       const base = await navigator.storage.getDirectory();
       const app = await base.getDirectoryHandle(ROOT_DIR, { create: true });
       return app.getDirectoryHandle(PROJECTS_DIR, { create: true });
-    })();
+    })().catch((error) => {
+      rootPromise = null;
+      throw error;
+    });
   }
   return rootPromise;
 }
@@ -151,19 +158,6 @@ export async function projectFileSize(projectId: string, fileName: string): Prom
   return file?.size ?? 0;
 }
 
-export async function clearAllProjectDirs(): Promise<void> {
-  const root = await getRoot();
-  const ids: string[] = [];
-  for await (const [name, handle] of root as unknown as AsyncIterable<[string, FileSystemHandle]>) {
-    if (handle.kind === "directory") ids.push(name);
-  }
-  for (const id of ids) {
-    try {
-      await root.removeEntry(id, { recursive: true });
-    } catch {}
-  }
-}
-
 export async function listProjectIds(): Promise<string[]> {
   const root = await getRoot();
   const ids: string[] = [];
@@ -171,6 +165,17 @@ export async function listProjectIds(): Promise<string[]> {
     if (handle.kind === "directory") ids.push(name);
   }
   return ids;
+}
+
+export async function clearAllProjectDirs(): Promise<void> {
+  const root = await getRoot();
+  await Promise.all(
+    (await listProjectIds()).map(async (id) => {
+      try {
+        await root.removeEntry(id, { recursive: true });
+      } catch {}
+    }),
+  );
 }
 
 export async function sha256Hex(data: BufferSource): Promise<string> {

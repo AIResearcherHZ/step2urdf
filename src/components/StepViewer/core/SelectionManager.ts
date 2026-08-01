@@ -126,6 +126,7 @@ export class SelectionManager {
   private instancedMeshRefs: Map<string, THREE.InstancedMesh> = new Map();
 
   private onSelectCallback?: (event: SelectionEvent) => void;
+  private onSolidActivateCallback?: (solidId: string, multi: boolean) => void;
   private onHoverCallback?: (feature: GeometryFeature | null) => void;
   private onRenderRequest?: () => void;
 
@@ -231,6 +232,7 @@ export class SelectionManager {
     }
 
     this.domElement.addEventListener("click", this.handleClick);
+    this.domElement.addEventListener("dblclick", this.handleDoubleClick);
     this.domElement.addEventListener("mousemove", this.handleMouseMove);
     this.domElement.addEventListener("mousedown", this.handleMouseDown);
     this.domElement.addEventListener("mouseup", this.handleMouseUp);
@@ -549,6 +551,10 @@ export class SelectionManager {
     this.selectionMode = String(mode) === "multi" ? "multi" : "single";
   }
 
+  onSolidActivate(callback: (solidId: string, multi: boolean) => void): void {
+    this.onSolidActivateCallback = callback;
+  }
+
   onSelect(callback: (event: SelectionEvent) => void): void {
     this.onSelectCallback = callback;
   }
@@ -589,6 +595,19 @@ export class SelectionManager {
     if (!feature) return;
 
     this.handleSelection(feature, solid, intersection, event);
+  };
+
+  private handleDoubleClick = (event: MouseEvent): void => {
+    if (!this.enabled) return;
+    if (this.granularityMode === "edge") return;
+
+    const intersects = this.getIntersects(event);
+    if (intersects.length === 0) return;
+
+    const solid = this.findSolidFromIntersection(intersects[0]);
+    if (!solid) return;
+
+    this.onSolidActivateCallback?.(solid.id, event.ctrlKey || event.shiftKey);
   };
 
   private handleMouseDown = (event: MouseEvent): void => {
@@ -866,6 +885,24 @@ export class SelectionManager {
     this.onSelectCallback?.({
       selections: this.getSelections(),
       selectedTreeNodeIds: treeIds,
+    });
+  }
+
+  selectSolids(solidIds: string[], multi = false): void {
+    if (!multi) this.clearSelectionInternal();
+
+    for (const solidId of solidIds) {
+      const solid = this.solidIdMap.get(solidId);
+      const feature = solid?.features[0];
+      if (!solid || !feature) continue;
+      if (this.selectedFeatures.has(feature.id)) continue;
+      this.addSelection(feature);
+      this.highlightSolidEdgeLines(solid, true);
+    }
+
+    this.onSelectCallback?.({
+      selections: this.getSelections(),
+      selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
     });
   }
 
@@ -1659,6 +1696,7 @@ export class SelectionManager {
     }
 
     this.domElement.removeEventListener("click", this.handleClick);
+    this.domElement.removeEventListener("dblclick", this.handleDoubleClick);
     this.domElement.removeEventListener("mousemove", this.handleMouseMove);
     this.domElement.removeEventListener("mousedown", this.handleMouseDown);
     this.domElement.removeEventListener("mouseup", this.handleMouseUp);

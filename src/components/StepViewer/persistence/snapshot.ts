@@ -13,7 +13,7 @@ import {
 type ViewerStore = ReturnType<typeof useStepViewerStore>;
 type UrdfStore = ReturnType<typeof useURDFStore>;
 
-export function toCameraSection(config: CameraConfig | null): CameraSection | null {
+function toCameraSection(config: CameraConfig | null): CameraSection | null {
   if (!config) return null;
   return {
     position: [config.position.x, config.position.y, config.position.z],

@@ -5,9 +5,9 @@
         v-show="visible"
         class="model-tree-panel-overlay"
         ref="panelRef"
-        :style="{ left: panelPos.x + 'px', top: panelPos.y + 'px', width: panelWidth + 'px' }"
+        @pointerdown="bringToFront"
       >
-        <div class="panel-header" @mousedown="startDrag">
+        <div class="panel-header" ref="handleRef">
           <span class="panel-title">模型结构</span>
           <el-button size="small" text @click="$emit('close')">✕</el-button>
         </div>
@@ -18,20 +18,22 @@
           @toggle-solid-visibility="handleToggleSolidVisibility"
           @split-solid="(id: string) => emit('splitSolid', id)"
           @rename-solid="(id: string) => emit('renameSolid', id)"
+          @merge-solids="(ids: string[]) => emit('mergeSolids', ids)"
         />
 
-        <div class="resize-handle" @mousedown.prevent="startResize" />
+        <div class="resize-handle" @pointerdown.prevent.stop="startResize" />
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, toRef } from "vue";
 import type { TreeNode } from "../types";
 import ModelTree from "./ModelTree.vue";
+import { useEdgeResize, useFloatingPanel } from "./composables/useFloatingPanel";
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
 }>();
 
@@ -41,10 +43,10 @@ const emit = defineEmits<{
   (e: "toggleSolidVisibility", solidId: string): void;
   (e: "splitSolid", solidId: string): void;
   (e: "renameSolid", solidId: string): void;
+  (e: "mergeSolids", solidIds: string[]): void;
   (e: "close"): void;
 }>();
 
-const panelRef = ref<HTMLElement>();
 const panelWidth = ref(300);
 
 const RIGHT_COLUMN_WIDTH = 160;
@@ -52,12 +54,19 @@ const PROPERTY_PANEL_WIDTH = 300;
 const PANEL_TOP_OFFSET = 80;
 const PANEL_EDGE_GAP = 12;
 
-function getDefaultPanelX(width: number): number {
-  const x = window.innerWidth - RIGHT_COLUMN_WIDTH - PROPERTY_PANEL_WIDTH - width - PANEL_EDGE_GAP;
-  return Math.max(PANEL_EDGE_GAP, x);
-}
+const { panelRef, handleRef, bringToFront } = useFloatingPanel({
+  visible: toRef(props, "visible"),
+  width: panelWidth,
+  initial: ({ width }) => ({
+    x: Math.max(
+      PANEL_EDGE_GAP,
+      width - RIGHT_COLUMN_WIDTH - PROPERTY_PANEL_WIDTH - panelWidth.value - PANEL_EDGE_GAP,
+    ),
+    y: PANEL_TOP_OFFSET,
+  }),
+});
 
-const panelPos = reactive({ x: getDefaultPanelX(panelWidth.value), y: PANEL_TOP_OFFSET });
+const { startResize } = useEdgeResize(panelWidth, { min: 220, max: 500 });
 
 function handleTreeSelect(node: TreeNode, multi: boolean): void {
   emit("treeSelect", node, multi);
@@ -69,43 +78,6 @@ function handleSolidHover(solidId: string | null): void {
 
 function handleToggleSolidVisibility(solidId: string): void {
   emit("toggleSolidVisibility", solidId);
-}
-
-function startDrag(e: MouseEvent): void {
-  if ((e.target as HTMLElement).closest("button, .el-button")) return;
-  e.preventDefault();
-  const startX = e.clientX - panelPos.x;
-  const startY = e.clientY - panelPos.y;
-  const onMove = (ev: MouseEvent) => {
-    panelPos.x = Math.max(0, ev.clientX - startX);
-    panelPos.y = Math.max(0, ev.clientY - startY);
-  };
-  const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    document.body.style.userSelect = "";
-  };
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
-}
-
-function startResize(e: MouseEvent): void {
-  const startX = e.clientX;
-  const startWidth = panelWidth.value;
-  const onMove = (ev: MouseEvent) => {
-    panelWidth.value = Math.max(220, Math.min(500, startWidth + ev.clientX - startX));
-  };
-  const onUp = () => {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  };
-  document.body.style.cursor = "col-resize";
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
 }
 </script>
 
@@ -120,7 +92,6 @@ function startResize(e: MouseEvent): void {
   border: 1px solid var(--panel-edge);
   border-radius: var(--radius-md);
   box-shadow: 0 20px 56px rgba(0, 0, 0, 0.38);
-  z-index: 1000;
   overflow: hidden;
 }
 
@@ -134,6 +105,7 @@ function startResize(e: MouseEvent): void {
   flex-shrink: 0;
   cursor: move;
   user-select: none;
+  touch-action: none;
 
   .panel-title {
     font-size: 13px;

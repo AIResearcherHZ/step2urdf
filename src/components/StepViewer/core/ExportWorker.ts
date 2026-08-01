@@ -1,6 +1,8 @@
 import * as Comlink from "comlink";
-import JSZip from "jszip";
+import { BlobWriter, TextReader, Uint8ArrayReader, ZipWriter, configure } from "@zip.js/zip.js";
 import type { SerializedSolidData } from "../types";
+
+configure({ useWebWorkers: false });
 
 function generateBinarySTL(
   solidDataList: SerializedSolidData[],
@@ -119,14 +121,18 @@ const workerApi = {
     unitScale: number,
     onProgress?: (stage: string, percent: number) => void,
     extraFiles?: Record<string, string>,
-    collisionMeshMap?: Record<string, { positions: Float32Array; indices: Uint32Array }>,
-  ): Promise<ArrayBuffer> {
-    const zip = new JSZip();
+  ): Promise<Blob> {
+    const zipWriter = new ZipWriter(new BlobWriter("application/zip"), {
+      level: 6,
+      zip64: true,
+      bufferedWrite: false,
+      keepOrder: false,
+    });
 
-    if (urdfXml) zip.file("robot.urdf", urdfXml);
+    if (urdfXml) await zipWriter.add("robot.urdf", new TextReader(urdfXml));
     if (extraFiles) {
       for (const [path, content] of Object.entries(extraFiles)) {
-        zip.file(path, content);
+        await zipWriter.add(path, new TextReader(content));
       }
     }
 
@@ -143,37 +149,17 @@ const workerApi = {
 
       const restInverse = linkRestInverseMap[linkName];
       const stlBuffer = generateBinarySTL(solidDataList, restInverse, unitScale);
-      zip.file(`meshes/${linkName}.stl`, stlBuffer);
-    }
-
-    if (collisionMeshMap) {
-      for (const [linkName, hull] of Object.entries(collisionMeshMap)) {
-        const restInverse = linkRestInverseMap[linkName];
-        const hullData = {
-          name: linkName,
-          positions: hull.positions,
-          normals: new Float32Array(0),
-          indices: hull.indices,
-          faceGroups: [],
-          faceGeometries: [],
-          edgeGroups: [],
-          edgeGeometries: [],
-          edgePolylines: new Float32Array(0),
-        } as SerializedSolidData;
-        const stl = generateBinarySTL([hullData], restInverse, unitScale);
-        zip.file(`meshes/${linkName}_collision.stl`, stl);
-      }
+      await zipWriter.add(
+        `meshes/${linkName}.stl`,
+        new Uint8ArrayReader(new Uint8Array(stlBuffer)),
+      );
     }
 
     onProgress?.("正在打包 ZIP...", 90);
-    const zipBuffer = await zip.generateAsync({
-      type: "arraybuffer",
-      compression: "DEFLATE",
-      compressionOptions: { level: 6 },
-    });
+    const blob = await zipWriter.close();
 
     onProgress?.("导出完成", 100);
-    return zipBuffer;
+    return blob;
   },
 };
 

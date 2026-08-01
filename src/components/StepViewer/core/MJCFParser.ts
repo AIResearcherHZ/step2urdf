@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import type { RobotParseResult, URDFParseOptions } from "./URDFSerializer";
 import { rotateInertiaTensor } from "./ZUpTransform";
+import { matrixToRPY, parseVec3 } from "./xmlFormat";
 
 interface ParseContext {
   scale: number;
@@ -35,12 +36,12 @@ export function parseMJCF(xml: string, options?: URDFParseOptions): RobotParseRe
     throw new Error("XML 中未找到 <mujoco> 元素");
   }
 
-  const worldbody = root.querySelector("worldbody");
+  const worldbody = directChildren(root, "worldbody")[0];
   if (!worldbody) {
     throw new Error("MJCF 中未找到 <worldbody> 元素");
   }
 
-  const angleAttr = root.querySelector("compiler")?.getAttribute("angle") ?? "radian";
+  const angleAttr = directChildren(root, "compiler")[0]?.getAttribute("angle") ?? "radian";
   const ctx: ParseContext = {
     scale: options?.unitScale ?? 1,
     angleScale: angleAttr.toLowerCase().startsWith("deg") ? Math.PI / 180 : 1,
@@ -193,13 +194,13 @@ function readJoint(
   ctx: ParseContext,
 ): { name: string; type: JointType; axis: [number, number, number]; limits: JointLimits } {
   const name = jointEl.getAttribute("name") || `${bodyName}_j${index + 1}`;
-  const axis = readVec3(jointEl.getAttribute("axis") || "0 0 1");
+  const axis = parseVec3(jointEl.getAttribute("axis") || "0 0 1");
   const rawType =
     jointEl.tagName === "freejoint" ? "free" : jointEl.getAttribute("type") || "hinge";
   const range = jointEl.getAttribute("range");
   const limited = jointEl.getAttribute("limited");
   const hasRange = !!range && limited !== "false";
-  const values = range ? readVec3(`${range} 0`) : [0, 0, 0];
+  const values = range ? parseVec3(`${range} 0`) : [0, 0, 0];
 
   switch (rawType) {
     case "slide": {
@@ -264,7 +265,7 @@ function readInertial(bodyEl: Element, ctx: ParseContext): InertialParams | null
   if (!el) return null;
 
   const mass = Number(el.getAttribute("mass") ?? "0") || 0;
-  const pos = readVec3(el.getAttribute("pos") || "0 0 0");
+  const pos = parseVec3(el.getAttribute("pos") || "0 0 0");
   const com: [number, number, number] = [
     pos[0] * ctx.scale,
     pos[1] * ctx.scale,
@@ -314,7 +315,7 @@ function readOrientation(el: Element, ctx: ParseContext): THREE.Matrix4 | null {
     return matrix;
   }
   if (eulerAttr) {
-    const e = readVec3(eulerAttr);
+    const e = parseVec3(eulerAttr);
     matrix.makeRotationFromEuler(
       new THREE.Euler(e[0] * ctx.angleScale, e[1] * ctx.angleScale, e[2] * ctx.angleScale, "XYZ"),
     );
@@ -331,18 +332,24 @@ function readOrientation(el: Element, ctx: ParseContext): THREE.Matrix4 | null {
 }
 
 function bodyLocalMatrix(bodyEl: Element, ctx: ParseContext): THREE.Matrix4 {
-  const pos = readVec3(bodyEl.getAttribute("pos") || "0 0 0");
+  const pos = parseVec3(bodyEl.getAttribute("pos") || "0 0 0");
   const matrix = readOrientation(bodyEl, ctx) ?? new THREE.Matrix4();
   matrix.setPosition(pos[0] * ctx.scale, pos[1] * ctx.scale, pos[2] * ctx.scale);
   return matrix;
 }
 
+function directChildren(parent: Element, tagName: string): Element[] {
+  return Array.from(parent.children).filter((el) => el.tagName === tagName);
+}
+
 function parseEquality(root: Element, ctx: ParseContext): LoopClosure[] {
-  const equality = root.querySelector("equality");
-  if (!equality) return [];
+  const constraints = directChildren(root, "equality").flatMap((block) =>
+    Array.from(block.children),
+  );
+  if (constraints.length === 0) return [];
 
   const loops: LoopClosure[] = [];
-  for (const el of Array.from(equality.children)) {
+  for (const el of constraints) {
     if (el.tagName !== "connect" && el.tagName !== "weld") continue;
     const body1 = el.getAttribute("body1") || "";
     const body2 = el.getAttribute("body2") || "";
@@ -353,7 +360,7 @@ function parseEquality(root: Element, ctx: ParseContext): LoopClosure[] {
       continue;
     }
 
-    const anchorLocal = readVec3(el.getAttribute("anchor") || "0 0 0");
+    const anchorLocal = parseVec3(el.getAttribute("anchor") || "0 0 0");
     const anchorWorld = new THREE.Vector3(
       anchorLocal[0] * ctx.scale,
       anchorLocal[1] * ctx.scale,
@@ -376,17 +383,4 @@ function parseEquality(root: Element, ctx: ParseContext): LoopClosure[] {
   }
 
   return loops;
-}
-
-function readVec3(str: string): [number, number, number] {
-  const parts = str.trim().split(/\s+/).map(Number);
-  return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
-}
-
-function matrixToRPY(m: THREE.Matrix4): [number, number, number] {
-  const euler = new THREE.Euler().setFromRotationMatrix(
-    new THREE.Matrix4().extractRotation(m),
-    "ZYX",
-  );
-  return [euler.x, euler.y, euler.z];
 }

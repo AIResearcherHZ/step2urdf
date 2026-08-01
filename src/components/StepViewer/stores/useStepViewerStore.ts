@@ -94,6 +94,47 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
       .filter((name): name is string => !!name),
   );
 
+  function solidIdOfIndex(index: number | undefined): string | null {
+    if (index === undefined) return null;
+    const byConvention = `solid_${index}`;
+    if (solidMap.value.has(byConvention)) return byConvention;
+    return solids.value[index]?.id ?? null;
+  }
+
+  function solidIdOfNode(node: Pick<TreeNode, "id" | "type" | "solidIndex">): string | null {
+    if (node.type !== "solid") return null;
+    if (node.id && solidMap.value.has(node.id)) return node.id;
+    return solidIdOfIndex(node.solidIndex);
+  }
+
+  const treeNodeIdBySolidId = computed(() => {
+    const map = new Map<string, string>();
+    for (const node of flatTreeNodeMap.value.values()) {
+      if (node.type !== "solid") continue;
+      const solidId = solidIdOfNode(node);
+      if (solidId && !map.has(solidId)) map.set(solidId, node.id);
+    }
+    return map;
+  });
+
+  function treeNodeIdOfSolid(solidId: string): string {
+    return treeNodeIdBySolidId.value.get(solidId) ?? solidId;
+  }
+
+  const selectedSolidIds = computed(() => {
+    const ids: string[] = [];
+    for (const nodeId of new Set(selectedTreeNodeIds.value)) {
+      const node = flatTreeNodeMap.value.get(nodeId);
+      const solidId = node ? solidIdOfNode(node) : solidMap.value.has(nodeId) ? nodeId : null;
+      if (solidId && !ids.includes(solidId)) ids.push(solidId);
+    }
+    return ids;
+  });
+
+  const hasTreeSelection = computed(
+    () => selectedTreeNodeIds.value.length > 0 || !!focusedSolidId.value,
+  );
+
   function updateUploadProgress(progress: Partial<UploadProgress>): void {
     uploadProgress.value = { ...uploadProgress.value, ...progress };
   }
@@ -117,7 +158,7 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
     if (solid.instanceId === undefined) solid.mesh.name = trimmed;
     if (solid.serializedData) solid.serializedData.name = trimmed;
 
-    const node = flatTreeNodeMap.value.get(solidId);
+    const node = flatTreeNodeMap.value.get(treeNodeIdOfSolid(solidId));
     if (node) node.name = trimmed;
     treeNodes.value = [...treeNodes.value];
     solidRevision.value++;
@@ -293,11 +334,16 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
     flatTreeNodeMap,
     selectedTreeNodeIdSet,
     selectedSolidNames,
+    selectedSolidIds,
+    hasTreeSelection,
     solidMap,
     solidNameMap,
     treeNodeCount,
     isModelRotated,
 
+    solidIdOfNode,
+    solidIdOfIndex,
+    treeNodeIdOfSolid,
     updateUploadProgress,
     setSolids,
     setFocusedSolid,

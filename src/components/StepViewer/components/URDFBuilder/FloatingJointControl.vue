@@ -1,8 +1,13 @@
 <template>
   <Teleport to="body">
     <Transition name="fk-panel">
-      <div v-show="visible" class="fk-floating-panel" :style="panelStyle" @mousedown.stop>
-        <div class="fk-title-bar" @mousedown="startDrag">
+      <div
+        v-show="visible"
+        class="fk-floating-panel"
+        ref="panelRef"
+        @pointerdown="bringToFront"
+      >
+        <div class="fk-title-bar" ref="handleRef">
           <span class="fk-title">🎛️ 关节控制</span>
           <div class="fk-title-actions">
             <el-button size="small" text @click.stop="urdfStore.resetJoints()">归零</el-button>
@@ -23,11 +28,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { toRef } from "vue";
 import { useURDFStore } from "../../stores/useURDFStore";
+import { useFloatingPanel } from "../composables/useFloatingPanel";
 import JointSlider from "./JointSlider.vue";
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
 }>();
 
@@ -37,50 +43,18 @@ defineEmits<{
 
 const urdfStore = useURDFStore();
 
-const posX = ref(Math.max(40, Math.min(window.innerWidth - 360, window.innerWidth * 0.6)));
-const posY = ref(Math.max(40, window.innerHeight - 460));
-
-const panelStyle = computed(() => ({
-  left: `${posX.value}px`,
-  top: `${posY.value}px`,
-}));
-
-function startDrag(e: MouseEvent): void {
-  e.preventDefault();
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const startPosX = posX.value;
-  const startPosY = posY.value;
-
-  const onMouseMove = (moveEvent: MouseEvent) => {
-    posX.value = Math.max(
-      0,
-      Math.min(window.innerWidth - 100, startPosX + moveEvent.clientX - startX),
-    );
-    posY.value = Math.max(
-      0,
-      Math.min(window.innerHeight - 50, startPosY + moveEvent.clientY - startY),
-    );
-  };
-
-  const onMouseUp = () => {
-    document.removeEventListener("mousemove", onMouseMove);
-    document.removeEventListener("mouseup", onMouseUp);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  };
-
-  document.body.style.cursor = "move";
-  document.body.style.userSelect = "none";
-  document.addEventListener("mousemove", onMouseMove);
-  document.addEventListener("mouseup", onMouseUp);
-}
+const { panelRef, handleRef, bringToFront } = useFloatingPanel({
+  visible: toRef(props, "visible"),
+  initial: ({ width, height }) => ({
+    x: Math.max(40, Math.min(width - 360, width * 0.6)),
+    y: Math.max(40, height - 460),
+  }),
+});
 </script>
 
 <style lang="scss" scoped>
 .fk-floating-panel {
   position: fixed;
-  z-index: 2000;
   width: 320px;
   max-height: 420px;
   display: flex;
@@ -101,6 +75,7 @@ function startDrag(e: MouseEvent): void {
   border-bottom: 1px solid var(--line-strong);
   cursor: move;
   user-select: none;
+  touch-action: none;
   flex-shrink: 0;
 }
 

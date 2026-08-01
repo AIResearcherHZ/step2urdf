@@ -364,10 +364,17 @@ export class SceneManager {
       this.disposeObject(child, materials);
     }
 
-    materials.forEach((m) => m.dispose());
+    materials.forEach((m) => this.disposeMaterial(m));
 
     this.computeSceneStats();
     this.markDirty();
+  }
+
+  private disposeMaterial(material: THREE.Material): void {
+    for (const value of Object.values(material as unknown as Record<string, unknown>)) {
+      if (value instanceof THREE.Texture) value.dispose();
+    }
+    material.dispose();
   }
 
   private disposeObject(object: THREE.Object3D, out: Set<THREE.Material>): void {
@@ -652,6 +659,7 @@ export class SceneManager {
 
     if (this.renderer) {
       this.renderer.dispose();
+      this.renderer.forceContextLoss?.();
       if (this.renderer.domElement?.parentNode === this.container) {
         this.container.removeChild(this.renderer.domElement);
       }

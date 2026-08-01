@@ -9,6 +9,7 @@ import { exportURDFInWorker, disposeExportWorker } from "../../core/useExportWor
 import { serializeURDF } from "../../core/URDFSerializer";
 import { serializeMJCF } from "../../core/MJCFSerializer";
 import { distributeInertia, type LinkInertiaInput } from "../../core/InertiaDistribution";
+import { buildLinkRestInverses, basePoseInverse } from "../../core/InertiaFrame";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import { useURDFStore } from "../../stores/useURDFStore";
 import type { SceneManager, SelectionManager } from "../../core";
@@ -489,29 +490,13 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         );
       }
 
-      const fk = forwardKinematics ?? new ForwardKinematics();
-      fk.setRobot(urdfStore.robot);
-
-      const linkRestInverses = new Map<string, THREE.Matrix4>();
-      for (const link of urdfStore.robot.links) {
-        const rest = fk.getLinkRestTransform(link.id);
-        if (rest) linkRestInverses.set(link.id, rest.clone().invert());
-      }
-
-      let basePoseInverseForExport: THREE.Matrix4 | undefined;
-      const bOrigin = urdfStore.baseLinkOrigin;
-      const bRPY = urdfStore.baseLinkRPY;
-      if (bOrigin || bRPY) {
-        const o = bOrigin ?? [0, 0, 0];
-        const r = bRPY ?? [0, 0, 0];
-        const T = new THREE.Matrix4().makeTranslation(o[0], o[1], o[2]);
-        const R = new THREE.Matrix4().makeRotationFromEuler(
-          new THREE.Euler(r[0], r[1], r[2], "ZYX"),
-        );
-        const basePoseMatrix = new THREE.Matrix4().multiplyMatrices(T, R);
-        basePoseInverseForExport = basePoseMatrix.clone().invert();
-        linkRestInverses.set(urdfStore.BASE_LINK_ID, basePoseInverseForExport);
-      }
+      const restOptions = {
+        baseLinkId: urdfStore.BASE_LINK_ID,
+        baseLinkOrigin: urdfStore.baseLinkOrigin,
+        baseLinkRPY: urdfStore.baseLinkRPY,
+      };
+      const linkRestInverses = buildLinkRestInverses(urdfStore.robot, restOptions);
+      const basePoseInverseForExport = basePoseInverse(restOptions);
 
       const format = urdfStore.exportFormat;
       const useCollision =
@@ -556,21 +541,7 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
         });
       }
 
-      const collisionMeshMap: Record<string, { positions: Float32Array; indices: Uint32Array }> =
-        {};
-      if (collisionShapeMap) {
-        for (const link of urdfStore.robot.links) {
-          const shape = collisionShapeMap.get(link.id);
-          if (shape?.type === "convex" && shape.hull) {
-            collisionMeshMap[link.name] = {
-              positions: shape.hull.positions,
-              indices: shape.hull.indices,
-            };
-          }
-        }
-      }
-
-      const zipBuffer = await exportURDFInWorker(
+      const blob = await exportURDFInWorker(
         urdfXml,
         linkSolidMap,
         linkRestInverseMap,
@@ -579,16 +550,14 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
           urdfStore.exportProgress = stage;
         },
         extraFiles,
-        collisionMeshMap,
       );
 
-      const blob = new Blob([zipBuffer], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${urdfStore.robot.name}.zip`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
 
       const label = format === "urdf" ? "URDF" : format === "mjcf" ? "MJCF" : "URDF + MJCF";
       ElMessage.success(`${label} 导出成功`);

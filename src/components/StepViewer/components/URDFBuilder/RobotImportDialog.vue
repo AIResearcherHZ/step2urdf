@@ -77,7 +77,7 @@
 <script setup lang="ts">
 import { ref, computed, toRaw } from "vue";
 import { ElMessage } from "element-plus";
-import { UploadFilled } from "@element-plus/icons-vue";
+import UploadFilled from "~icons/ep/upload-filled";
 import type { UploadFile, UploadInstance } from "element-plus";
 import {
   parseRobotText,
@@ -137,7 +137,7 @@ async function handleFileChange(uploadFile: UploadFile): Promise<void> {
   }
   fileName.value = raw.name;
   fileText.value = await raw.text();
-  if (name.endsWith('.xml') && /<\s*mujoco[\s>]/i.test(fileText.value)) unit.value = "m";
+  if (name.endsWith(".xml") && /<\s*mujoco[\s>]/i.test(fileText.value)) unit.value = "m";
   parseCurrent();
 }
 
@@ -185,7 +185,7 @@ function applyImport(): void {
 
   .robot-upload-icon {
     font-size: 28px;
-    color: #409eff;
+    color: var(--accent);
   }
 
   .robot-upload-title {

@@ -148,7 +148,7 @@ function buildLinkTree(linkSolidNames: Map<string, string[]>): SerializedTreeNod
   for (const [linkName, names] of linkSolidNames) {
     if (names.length === 1) {
       children.push({
-        id: `node_solid_${solidIndex}`,
+        id: `solid_${solidIndex}`,
         name: linkName,
         type: "solid",
         solidIndex: solidIndex++,
@@ -161,7 +161,7 @@ function buildLinkTree(linkSolidNames: Map<string, string[]>): SerializedTreeNod
       name: linkName,
       type: "compound",
       children: names.map((name) => ({
-        id: `node_solid_${solidIndex}`,
+        id: `solid_${solidIndex}`,
         name,
         type: "solid" as const,
         solidIndex: solidIndex++,

@@ -50,16 +50,6 @@ export function sumImportedMass(links: readonly URDFLink[]): number {
   return total;
 }
 
-export function linkMassSum(link: URDFLink): number {
-  if (!link.solidMasses) return 0;
-  let total = 0;
-  for (const solidId of link.solidIds) {
-    const m = link.solidMasses[solidId];
-    if (typeof m === "number" && m > 0) total += m;
-  }
-  return total;
-}
-
 export async function recomputeLinkInertial(
   link: URDFLink,
   geoms: SolidGeom[],

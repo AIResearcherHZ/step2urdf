@@ -1,8 +1,18 @@
 <template>
   <div class="model-tree">
-    <div class="tree-header">
-      <span class="tree-title">模型结构</span>
-      <span v-if="store.hasModel" class="tree-count">{{ store.treeNodeCount }} 项</span>
+    <div class="tree-header" v-if="store.hasModel">
+      <span class="tree-count">{{ store.treeNodeCount }} 项</span>
+      <span class="tree-tip">Ctrl / Shift 多选，拖到另一个 Solid 上合并</span>
+      <el-button
+        v-if="selectedSolidIds.length >= 2"
+        class="tree-merge"
+        size="small"
+        type="warning"
+        plain
+        @click="handleMerge"
+      >
+        合并所选（{{ selectedSolidIds.length }}）
+      </el-button>
     </div>
 
     <div v-if="!store.hasModel" class="tree-empty">
@@ -34,12 +44,25 @@
               'is-solid': data.type === 'solid',
               'is-edge': data.type === 'edge',
               'is-compound': data.type === 'compound' || data.type === 'root',
+              'is-dragging': isDragSource(data),
+              'is-drop-target': dropTargetId === data.id,
             }"
+            :draggable="data.type === 'solid'"
             @mouseenter="handleNodeMouseEnter(data)"
             @mouseleave="handleNodeMouseLeave"
+            @dragstart="handleDragStart(data, $event)"
+            @dragover="handleDragOver(data, $event)"
+            @dragleave="handleDragLeave(data)"
+            @drop="handleDrop(data, $event)"
+            @dragend="resetDrag"
           >
             <span class="node-icon">{{ getNodeIcon(data) }}</span>
-            <span class="node-label" :title="data.name">{{ data.name }}</span>
+            <span
+              class="node-label"
+              :title="data.type === 'solid' ? `${data.name}（双击重命名）` : data.name"
+              @dblclick.stop="data.type === 'solid' && handleRename(data)"
+              >{{ data.name }}</span
+            >
             <span v-if="data.children && data.children.length" class="node-count">
               ({{ data.children.length }})
             </span>
@@ -123,8 +146,10 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import type { TreeNode } from "../types";
 import { useStepViewerStore } from "../stores/useStepViewerStore";
+import { useURDFStore } from "../stores/useURDFStore";
 
 const store = useStepViewerStore();
+const urdfStore = useURDFStore();
 
 const emit = defineEmits<{
   (e: "select", node: TreeNode, multi: boolean): void;
@@ -132,6 +157,7 @@ const emit = defineEmits<{
   (e: "toggleSolidVisibility", solidId: string): void;
   (e: "splitSolid", solidId: string): void;
   (e: "renameSolid", solidId: string): void;
+  (e: "mergeSolids", solidIds: string[]): void;
 }>();
 
 const treeRef = ref();
@@ -148,12 +174,78 @@ const treeProps = {
 const currentNodeKey = computed(() => {
   const ids = store.selectedTreeNodeIds;
   return (
-    ids.find((id) => /^solid_\d+$/.test(id)) ||
-    ids.find((id) => id.includes("_edge_")) ||
+    ids.find((id) => store.flatTreeNodeMap.get(id)?.type === "solid") ||
+    ids.find((id) => store.flatTreeNodeMap.get(id)?.type === "edge") ||
     ids[0] ||
     ""
   );
 });
+
+const selectedSolidIds = computed(() => store.selectedSolidIds);
+
+function handleMerge(): void {
+  if (selectedSolidIds.value.length >= 2) emit("mergeSolids", selectedSolidIds.value);
+}
+
+const dragSourceIds = ref<string[]>([]);
+const dropTargetId = ref("");
+
+function mergeTargetId(node: TreeNode): string | null {
+  if (dragSourceIds.value.length === 0) return null;
+  const targetId = store.solidIdOfNode(node);
+  if (!targetId || dragSourceIds.value.includes(targetId)) return null;
+  const owners = new Set<string>();
+  for (const id of [targetId, ...dragSourceIds.value]) {
+    const linkId = urdfStore.solidLinkMap.get(id);
+    if (linkId) owners.add(linkId);
+  }
+  return owners.size <= 1 ? targetId : null;
+}
+
+function isDragSource(node: TreeNode): boolean {
+  const solidId = store.solidIdOfNode(node);
+  return !!solidId && dragSourceIds.value.includes(solidId);
+}
+
+function resetDrag(): void {
+  dragSourceIds.value = [];
+  dropTargetId.value = "";
+}
+
+function handleDragStart(node: TreeNode, e: DragEvent): void {
+  const solidId = store.solidIdOfNode(node);
+  if (!solidId) {
+    e.preventDefault();
+    return;
+  }
+  const selected = selectedSolidIds.value;
+  dragSourceIds.value = selected.includes(solidId) ? selected.slice() : [solidId];
+  dropTargetId.value = "";
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragSourceIds.value.join(","));
+  }
+}
+
+function handleDragOver(node: TreeNode, e: DragEvent): void {
+  if (!mergeTargetId(node)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  dropTargetId.value = node.id;
+}
+
+function handleDragLeave(node: TreeNode): void {
+  if (dropTargetId.value === node.id) dropTargetId.value = "";
+}
+
+function handleDrop(node: TreeNode, e: DragEvent): void {
+  const targetId = mergeTargetId(node);
+  if (!targetId) return;
+  e.preventDefault();
+  const ids = [targetId, ...dragSourceIds.value];
+  resetDrag();
+  emit("mergeSolids", ids);
+}
 
 function getNodeIcon(data: TreeNode): string {
   switch (data.type) {
@@ -212,8 +304,8 @@ function handleNodeMouseEnter(node: TreeNode): void {
     }
     return;
   }
-  const solidId = `solid_${node.solidIndex}`;
-  if (solidId === hoveredSolidId) return;
+  const solidId = store.solidIdOfNode(node);
+  if (!solidId || solidId === hoveredSolidId) return;
   hoveredSolidId = solidId;
   cancelAnimationFrame(hoverRafId);
   hoverRafId = requestAnimationFrame(() => {
@@ -230,24 +322,22 @@ function handleNodeMouseLeave(): void {
 }
 
 function handleToggleVisibility(node: TreeNode): void {
-  if (node.type !== "solid" || node.solidIndex === undefined) return;
-  const solidId = `solid_${node.solidIndex}`;
-  emit("toggleSolidVisibility", solidId);
+  const solidId = store.solidIdOfNode(node);
+  if (solidId) emit("toggleSolidVisibility", solidId);
 }
 
 function handleRename(node: TreeNode): void {
-  if (node.type !== "solid" || node.solidIndex === undefined) return;
-  emit("renameSolid", `solid_${node.solidIndex}`);
+  emit("renameSolid", store.solidIdOfNode(node) ?? node.id);
 }
 
 function handleSplit(node: TreeNode): void {
-  if (node.type !== "solid" || node.solidIndex === undefined) return;
-  emit("splitSolid", `solid_${node.solidIndex}`);
+  const solidId = store.solidIdOfNode(node);
+  if (solidId) emit("splitSolid", solidId);
 }
 
 function isSolidVisible(node: TreeNode): boolean {
-  if (node.solidIndex === undefined) return true;
-  return store.isSolidVisible(`solid_${node.solidIndex}`);
+  const solidId = store.solidIdOfNode(node);
+  return solidId ? store.isSolidVisible(solidId) : true;
 }
 
 function findAncestorIds(targetId: string): string[] {
@@ -351,11 +441,23 @@ watch(
   font-size: 14px;
   color: var(--el-text-color-primary, #303133);
 
-  .tree-title {
+  .tree-tip {
     flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tree-merge {
+    flex-shrink: 0;
   }
 
   .tree-count {
+    flex-shrink: 0;
     font-size: 12px;
     font-weight: 400;
     color: var(--el-text-color-secondary, #909399);
@@ -397,7 +499,17 @@ watch(
   min-width: 0;
 
   &.is-selected {
-    background-color: rgba(64, 158, 255, 0.15);
+    background-color: rgba(232, 138, 22, 0.15);
+  }
+
+  &.is-dragging {
+    opacity: 0.45;
+  }
+
+  &.is-drop-target {
+    background-color: rgba(230, 162, 60, 0.22);
+    outline: 1px dashed #e6a23c;
+    outline-offset: -1px;
   }
 
   .node-icon {
@@ -466,8 +578,8 @@ watch(
       background-color 0.15s;
 
     &:hover {
-      background-color: rgba(64, 158, 255, 0.1);
-      color: #409eff;
+      background-color: rgba(232, 138, 22, 0.1);
+      color: var(--accent);
       opacity: 1;
     }
 

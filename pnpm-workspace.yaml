@@ -11,3 +11,6 @@ dedupePeerDependents: true
 minimumReleaseAgeExclude:
   - vite@8.2.0
   - '@napi-rs/wasm-runtime@1.2.1'
+  - occt-wasm@3.8.2
+  - '@types/three@0.185.3'
+  - three-mesh-bvh@0.9.14

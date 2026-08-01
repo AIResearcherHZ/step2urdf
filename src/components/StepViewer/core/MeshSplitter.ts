@@ -5,6 +5,7 @@ import type {
   EdgeGroupInfo,
   EdgeGeometryData,
   SerializedTreeNode,
+  SolidMassProps,
   TreeNodeType,
 } from "../types";
 import type { RawMesh } from "./StlParser";
@@ -677,6 +678,45 @@ export function buildFlatTree(
   };
 }
 
+const MASS_PROPS_SCALE = 1e-15;
+
+function mergeMassProps(parts: SerializedSolidData[]): SolidMassProps | undefined {
+  const all: SolidMassProps[] = [];
+  let volume = 0;
+  for (const part of parts) {
+    if (!part.massProps || part.massProps.volume <= 0) return undefined;
+    all.push(part.massProps);
+    volume += part.massProps.volume;
+  }
+  if (volume <= 0) return undefined;
+
+  const com: [number, number, number] = [0, 0, 0];
+  for (const mp of all) {
+    com[0] += mp.com[0] * mp.volume;
+    com[1] += mp.com[1] * mp.volume;
+    com[2] += mp.com[2] * mp.volume;
+  }
+  com[0] /= volume;
+  com[1] /= volume;
+  com[2] /= volume;
+
+  const inertiaAtCom: SolidMassProps["inertiaAtCom"] = [0, 0, 0, 0, 0, 0];
+  for (const mp of all) {
+    const dx = mp.com[0] - com[0];
+    const dy = mp.com[1] - com[1];
+    const dz = mp.com[2] - com[2];
+    const w = mp.volume * MASS_PROPS_SCALE;
+    inertiaAtCom[0] += mp.inertiaAtCom[0] + w * (dy * dy + dz * dz);
+    inertiaAtCom[1] += mp.inertiaAtCom[1] - w * dx * dy;
+    inertiaAtCom[2] += mp.inertiaAtCom[2] - w * dx * dz;
+    inertiaAtCom[3] += mp.inertiaAtCom[3] + w * (dx * dx + dz * dz);
+    inertiaAtCom[4] += mp.inertiaAtCom[4] - w * dy * dz;
+    inertiaAtCom[5] += mp.inertiaAtCom[5] + w * (dx * dx + dy * dy);
+  }
+
+  return { volume, com, inertiaAtCom };
+}
+
 export function mergeSolidData(
   parts: SerializedSolidData[],
   name: string,
@@ -761,5 +801,6 @@ export function mergeSolidData(
     edgeGroups,
     edgeGeometries,
     edgePolylines,
+    massProps: mergeMassProps(parts),
   };
 }

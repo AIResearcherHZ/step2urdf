@@ -104,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { Delete } from "@element-plus/icons-vue";
+import Delete from "~icons/ep/delete";
 import { ElMessage } from "element-plus";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";

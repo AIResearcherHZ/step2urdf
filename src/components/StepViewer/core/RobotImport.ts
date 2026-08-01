@@ -29,7 +29,7 @@ export function detectRobotFormat(text: string): RobotFileFormat | null {
   return null;
 }
 
-export function normalizeInertialsToWorld(robot: URDFRobot): number {
+function normalizeInertialsToWorld(robot: URDFRobot): number {
   const withInertial = robot.links.filter((l) => l.inertial);
   if (withInertial.length === 0) return 0;
 

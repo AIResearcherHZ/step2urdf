@@ -184,7 +184,7 @@ export interface JointFrameTarget {
   axisOffset: [number, number, number];
 }
 
-export function jointParentRestRotation(
+function jointParentRestRotation(
   joints: readonly JointFrameTarget[],
   linkId: string,
 ): THREE.Matrix4 {
@@ -210,7 +210,7 @@ export function jointParentRestRotation(
   return m;
 }
 
-export function topologicalJointOrder(joints: readonly JointFrameTarget[]): JointFrameTarget[] {
+function topologicalJointOrder(joints: readonly JointFrameTarget[]): JointFrameTarget[] {
   const childIds = new Set(joints.map((j) => j.childLinkId));
   const byParent = new Map<string, JointFrameTarget[]>();
   for (const j of joints) {
@@ -277,7 +277,7 @@ export function alignAllJointFramesToWorldZUp(joints: readonly JointFrameTarget[
   return applied;
 }
 
-export function worldAlignJointFrame(
+function worldAlignJointFrame(
   parentRestRotation: THREE.Matrix4,
   rpy: readonly [number, number, number],
   axis: readonly [number, number, number],
