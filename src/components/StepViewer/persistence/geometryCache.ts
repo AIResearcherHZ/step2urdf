@@ -77,12 +77,7 @@ export function encodeGeometryCache(
   view.setUint32(4, CONTAINER_VERSION, true);
   view.setUint32(8, headerBytes.byteLength, true);
 
-  return new Blob([
-    prefix,
-    headerBytes,
-    new Uint8Array(headerPadding),
-    ...chunks.map((c) => c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) as ArrayBuffer),
-  ]);
+  return new Blob([prefix, headerBytes, new Uint8Array(headerPadding), ...(chunks as BlobPart[])]);
 }
 
 export interface DecodedGeometryCache {

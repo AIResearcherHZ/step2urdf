@@ -146,6 +146,7 @@ import { ref, nextTick } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Edit, Delete, Download, Box, Share, Paperclip, Cpu } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
+import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import type { URDFTreeNode } from "../../stores/useURDFStore";
 import type { JointType } from "../../types";
 import ViewControls from "./ViewControls.vue";
@@ -158,6 +159,7 @@ defineEmits<{
 }>();
 
 const urdfStore = useURDFStore();
+const stepStore = useStepViewerStore();
 const treeRef = ref<any>();
 const panelWidth = ref(330);
 
@@ -165,10 +167,7 @@ const editingId = ref<string | null>(null);
 const editingName = ref("");
 
 function guardActiveMode(): boolean {
-  if (urdfStore.bindingMode.active) {
-    ElMessage.warning("请先点击「 完成绑定」按钮，完成当前 Solid 绑定后再操作");
-    return true;
-  }
+  if (urdfStore.bindingMode.active) urdfStore.stopBindingMode();
   if (urdfStore.edgePickEditJointId) {
     ElMessage.warning("请先点击「✕ 停止拾取」结束关节轴线拾取后再操作");
     return true;
@@ -179,10 +178,15 @@ function guardActiveMode(): boolean {
 function handleNodeClick(data: URDFTreeNode): void {
   if (editingId.value) return;
   if (urdfStore.bindingMode.active) {
-    if (data.id !== urdfStore.bindingMode.targetLinkId) {
-      ElMessage.warning("请先点击「 完成绑定」按钮，完成当前 Solid 绑定后再切换");
+    if (data.nodeType === "link") {
+      urdfStore.selectedLinkId = data.id;
+      urdfStore.selectedJointId = null;
+      stepStore.setFocusedSolid(null);
+      urdfStore.startBindingMode(data.id);
+      ElMessage.info(`绑定目标已切换到「${data.label}」`);
+      return;
     }
-    return;
+    urdfStore.stopBindingMode();
   }
   if (urdfStore.edgePickEditJointId) {
     if (data.id !== urdfStore.edgePickEditJointId) {
@@ -190,6 +194,7 @@ function handleNodeClick(data: URDFTreeNode): void {
     }
     return;
   }
+  stepStore.setFocusedSolid(null);
   if (data.nodeType === "link") {
     urdfStore.selectedLinkId = data.id;
     urdfStore.selectedJointId = null;
@@ -232,16 +237,13 @@ function handleAddChildLink(data: URDFTreeNode): void {
 }
 
 function handleBindSolid(data: URDFTreeNode): void {
-  if (urdfStore.bindingMode.active && urdfStore.bindingMode.targetLinkId !== data.id) {
-    ElMessage.warning("请先点击「 完成绑定」按钮，完成当前 Solid 绑定后再切换");
-    return;
-  }
   if (urdfStore.edgePickEditJointId) {
     ElMessage.warning("请先点击「✕ 停止拾取」结束关节轴线拾取后再操作");
     return;
   }
   urdfStore.selectedLinkId = data.id;
   urdfStore.selectedJointId = null;
+  stepStore.setFocusedSolid(null);
   nextTick(() => treeRef.value?.setCurrentKey(data.id));
   urdfStore.startBindingMode(data.id);
 }

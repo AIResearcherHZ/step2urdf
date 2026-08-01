@@ -1,17 +1,11 @@
 import * as Comlink from "comlink";
 import type { ExportWorkerApi } from "./ExportWorker";
 import type { SerializedSolidData } from "../types";
+import { createWorkerClient } from "./workerClient";
 
-let worker: Worker | null = null;
-let workerProxy: Comlink.Remote<ExportWorkerApi> | null = null;
-
-function getProxy(): Comlink.Remote<ExportWorkerApi> {
-  if (!workerProxy) {
-    worker = new Worker(new URL("./ExportWorker.ts", import.meta.url), { type: "module" });
-    workerProxy = Comlink.wrap<ExportWorkerApi>(worker);
-  }
-  return workerProxy;
-}
+const client = createWorkerClient<ExportWorkerApi>(
+  () => new Worker(new URL("./ExportWorker.ts", import.meta.url), { type: "module" }),
+);
 
 export async function exportURDFInWorker(
   urdfXml: string,
@@ -22,21 +16,19 @@ export async function exportURDFInWorker(
   extraFiles?: Record<string, string>,
   collisionMeshMap?: Record<string, { positions: Float32Array; indices: Uint32Array }>,
 ): Promise<ArrayBuffer> {
-  const proxy = getProxy();
-  return proxy.exportURDF(
-    urdfXml,
-    linkSolidMap,
-    linkRestInverseMap,
-    unitScale,
-    onProgress ? Comlink.proxy(onProgress) : undefined,
-    extraFiles,
-    collisionMeshMap,
-  );
+  return client
+    .get()
+    .exportURDF(
+      urdfXml,
+      linkSolidMap,
+      linkRestInverseMap,
+      unitScale,
+      onProgress ? Comlink.proxy(onProgress) : undefined,
+      extraFiles,
+      collisionMeshMap,
+    );
 }
 
 export function disposeExportWorker(): void {
-  workerProxy?.[Comlink.releaseProxy]();
-  worker?.terminate();
-  worker = null;
-  workerProxy = null;
+  client.dispose();
 }

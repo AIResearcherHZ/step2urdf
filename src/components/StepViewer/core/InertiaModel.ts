@@ -17,10 +17,7 @@ export interface LinkInertiaUpdate {
   solidMasses: Record<string, number>;
 }
 
-export function apportionByVolume(
-  volumes: SolidVolume[],
-  mass: number,
-): Record<string, number> {
+export function apportionByVolume(volumes: SolidVolume[], mass: number): Record<string, number> {
   const out: Record<string, number> = {};
   if (!(mass > 0) || volumes.length === 0) return out;
 
@@ -108,7 +105,9 @@ export async function recomputeLinkInertial(
 
   return {
     inertial,
-    solidMasses: Object.fromEntries(entries.filter((e) => e.mass > 0).map((e) => [e.solidId, e.mass])),
+    solidMasses: Object.fromEntries(
+      entries.filter((e) => e.mass > 0).map((e) => [e.solidId, e.mass]),
+    ),
   };
 }
 

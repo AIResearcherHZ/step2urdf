@@ -55,7 +55,12 @@
           <span class="section-title">绑定 Solids（{{ link.solidIds.length }}）</span>
         </template>
         <div class="prop-form">
-          <div v-for="solidId in link.solidIds" :key="solidId" class="solid-item">
+          <div
+            v-for="solidId in link.solidIds"
+            :key="solidId"
+            class="solid-item"
+            :class="{ 'is-focused': stepStore.focusedSolidId === solidId }"
+          >
             <el-checkbox
               v-if="link.solidIds.length > 1"
               :model-value="mergeSelection.includes(solidId)"
@@ -64,12 +69,23 @@
             <el-icon>
               <Files />
             </el-icon>
-            <span class="solid-name" :title="getSolidName(solidId)">{{
-              getSolidName(solidId)
-            }}</span>
+            <span
+              class="solid-name"
+              :title="`${getSolidName(solidId)}（点击在 3D 中单独高亮）`"
+              @click="toggleFocus(solidId)"
+              >{{ getSolidName(solidId) }}</span
+            >
             <span v-if="getSolidMass(solidId) !== null" class="solid-mass">
               {{ getSolidMass(solidId)!.toFixed(3) }} kg
             </span>
+            <el-tooltip content="重命名 Solid" placement="top" :show-after="500">
+              <el-button
+                text
+                :icon="EditPen"
+                @click="handleRenameSolid(solidId)"
+                class="unbind-btn"
+              />
+            </el-tooltip>
             <el-tooltip content="按连通面片拆解为多个 Solid" placement="top" :show-after="500">
               <el-button
                 text
@@ -148,6 +164,12 @@
                 {{ link.inertial.com.map((v) => v.toFixed(2)).join(", ") }} mm
               </span>
             </div>
+            <div class="prop-row">
+              <span class="prop-label" title="惯量主轴姿态，顺序 w, x, y, z">quat</span>
+              <span class="prop-value">
+                {{ formatQuat(link.inertial.inertia) }}
+              </span>
+            </div>
             <div class="inertia-grid">
               <span class="inertia-title">惯性张量（kg·m²）</span>
               <div class="inertia-row">
@@ -186,11 +208,18 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { vHint } from "../composables/useHintBar";
-import { ElMessage } from "element-plus";
-import { Files, Delete, Paperclip, Scissor, Connection } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { Files, Delete, Paperclip, Scissor, Connection, EditPen } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
 import { useGeometryEditApi } from "../composables/useGeometryEdit";
+import { principalAxisQuat } from "../../core/useInertiaWorker";
+import type { InertialParams } from "../../types";
+
+function formatQuat(inertia: InertialParams["inertia"]): string {
+  const [x, y, z, w] = principalAxisQuat(inertia);
+  return [w, x, y, z].map((v) => v.toFixed(4)).join(", ");
+}
 
 const urdfStore = useURDFStore();
 const stepStore = useStepViewerStore();
@@ -236,9 +265,7 @@ async function handleSplit(solidIds: string[]): Promise<void> {
     }
     mergeSelection.value = [];
     const inertial = link.value?.inertial;
-    const hint = inertial
-      ? `，质量 ${inertial.mass.toFixed(4)} kg 保持不变，质心与惯量已重算`
-      : "";
+    const hint = inertial ? `，质量 ${inertial.mass.toFixed(4)} kg 保持不变，质心与惯量已重算` : "";
     ElMessage.success(`已拆解为 ${total} 个细 Solid${hint}`);
   } catch (error) {
     ElMessage.error(`拆解失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -266,7 +293,27 @@ function handleUnbind(solidId: string): void {
 }
 
 function getSolidName(solidId: string): string {
-  return stepStore.solidMap.get(solidId)?.name ?? solidId;
+  return stepStore.solidNameMap.get(solidId) ?? solidId;
+}
+
+function toggleFocus(solidId: string): void {
+  stepStore.setFocusedSolid(stepStore.focusedSolidId === solidId ? null : solidId);
+}
+
+async function handleRenameSolid(solidId: string): Promise<void> {
+  try {
+    const { value } = await ElMessageBox.prompt("输入新的 Solid 名称", "重命名 Solid", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      inputValue: getSolidName(solidId),
+      inputValidator: (v: string) => (v && v.trim().length > 0 ? true : "名称不能为空"),
+    });
+    if (stepStore.renameSolid(solidId, value)) {
+      ElMessage.success(`已重命名为「${value.trim()}」`);
+    }
+  } catch {
+    return;
+  }
 }
 
 function getSolidMass(solidId: string): number | null {
@@ -414,18 +461,23 @@ function autoCalcOrigin(): void {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 
   .prop-label {
     font-size: 11px;
     color: #606266;
     width: 36px;
     flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .prop-value {
     font-size: 12px;
     color: #303133;
     font-family: monospace;
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
   }
 
   .prop-unit {
@@ -456,6 +508,17 @@ function autoCalcOrigin(): void {
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1;
+    cursor: pointer;
+  }
+
+  &.is-focused {
+    background: #ecf5ff;
+    border-color: #409eff;
+
+    .solid-name {
+      color: #409eff;
+      font-weight: 600;
+    }
   }
 
   .unbind-btn {

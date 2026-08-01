@@ -251,8 +251,7 @@ function pairRadially(
 
     const [nx, ny, nz] = triangleNormal(positions, indices, t);
     angles[i] = Math.atan2(wx * sx + wy * sy + wz * sz, wx * rx + wy * ry + wz * rz);
-    ties[i] =
-      (wy * nz - wz * ny) * dx + (wz * nx - wx * nz) * dy + (wx * ny - wy * nx) * dz;
+    ties[i] = (wy * nz - wz * ny) * dx + (wz * nx - wx * nz) * dy + (wx * ny - wy * nx) * dz;
     forward[i] = weldMap[tail] === originId ? 1 : 0;
     slots[i] = i;
   }
@@ -460,7 +459,10 @@ function groupPlanarFaces(
     const i0 = indices[t * 3] * 3;
     const d = nx * positions[i0] + ny * positions[i0 + 1] + nz * positions[i0 + 2];
     const base =
-      Math.round(nx * 50) + 64 + (Math.round(ny * 50) + 64) * 128 + (Math.round(nz * 50) + 64) * 16384;
+      Math.round(nx * 50) +
+      64 +
+      (Math.round(ny * 50) + 64) * 128 +
+      (Math.round(nz * 50) + 64) * 16384;
     keys[t] = Math.round(d / distTolerance) * 2097152 + base;
   }
 
@@ -646,7 +648,8 @@ function pickOwner(
     }
     if (!inside) continue;
 
-    const volume = (box[3] - box[0] + margin) * (box[4] - box[1] + margin) * (box[5] - box[2] + margin);
+    const volume =
+      (box[3] - box[0] + margin) * (box[4] - box[1] + margin) * (box[5] - box[2] + margin);
     if (volume < bestVolume) {
       bestVolume = volume;
       best = index;

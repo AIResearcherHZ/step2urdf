@@ -575,6 +575,7 @@ export function useProjectPersistence(host: PersistenceHost) {
     }
 
     mixNumber(urdf.totalMass);
+    for (const sid of urdf.lockedSolidIds) mixText(sid);
     mixText(urdf.exportFormat);
     mixTriple(urdf.baseLinkOrigin);
     mixTriple(urdf.baseLinkRPY);

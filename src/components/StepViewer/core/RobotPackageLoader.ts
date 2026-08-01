@@ -21,11 +21,13 @@ export interface PackageLoadResult {
 
 function refMatrix(ref: ResolvedMeshRef, unitScale: number): THREE.Matrix4 {
   const [roll, pitch, yaw] = ref.origin.rpy;
-  const rotation = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(roll, pitch, yaw, "ZYX"));
+  const rotation = new THREE.Matrix4().makeRotationFromEuler(
+    new THREE.Euler(roll, pitch, yaw, "ZYX"),
+  );
   const translation = new THREE.Matrix4().makeTranslation(
     ref.origin.xyz[0] * unitScale,
     ref.origin.xyz[1] * unitScale,
-    ref.origin.xyz[2] * unitScale
+    ref.origin.xyz[2] * unitScale,
   );
   const scale = new THREE.Matrix4().makeScale(ref.scale[0], ref.scale[1], ref.scale[2]);
   return translation.multiply(rotation).multiply(scale);
@@ -52,7 +54,7 @@ export async function loadRobotPackageGeometry(
   bindings: LinkMeshBinding[],
   unitScale: number,
   robot: URDFRobot,
-  onProgress?: (progress: PackageLoadProgress) => void
+  onProgress?: (progress: PackageLoadProgress) => void,
 ): Promise<PackageLoadResult> {
   const solids: SerializedSolidData[] = [];
   const linkSolidNames = new Map<string, string[]>();
@@ -61,12 +63,12 @@ export async function loadRobotPackageGeometry(
 
   const restByLinkName = buildRestTransforms(robot);
 
-  const total = bindings.reduce((sum, b) => sum + b.refs.filter(r => !!r.file).length, 0);
+  const total = bindings.reduce((sum, b) => sum + b.refs.filter((r) => !!r.file).length, 0);
   let loaded = 0;
 
   for (const binding of bindings) {
     const names: string[] = [];
-    const usable = binding.refs.filter(ref => ref.file);
+    const usable = binding.refs.filter((ref) => ref.file);
 
     for (let i = 0; i < usable.length; i++) {
       const ref = usable[i];
@@ -87,14 +89,15 @@ export async function loadRobotPackageGeometry(
         continue;
       }
 
-      const baseName = usable.length === 1 ? binding.linkName : `${binding.linkName}_${String(i + 1)}`;
+      const baseName =
+        usable.length === 1 ? binding.linkName : `${binding.linkName}_${String(i + 1)}`;
 
       try {
         const result = await importStlSolids(buffer, {
           scale: unitScale,
           autoScale: false,
           split: false,
-          baseName
+          baseName,
         });
 
         const rest = restByLinkName.get(binding.linkName);
@@ -109,7 +112,9 @@ export async function loadRobotPackageGeometry(
         }
         triangles += result.triangles;
       } catch (error) {
-        skipped.push(`${binding.linkName}: ${file.name}（${error instanceof Error ? error.message : "解析失败"}）`);
+        skipped.push(
+          `${binding.linkName}: ${file.name}（${error instanceof Error ? error.message : "解析失败"}）`,
+        );
       }
 
       loaded++;
@@ -146,7 +151,7 @@ function buildLinkTree(linkSolidNames: Map<string, string[]>): SerializedTreeNod
         id: `node_solid_${solidIndex}`,
         name: linkName,
         type: "solid",
-        solidIndex: solidIndex++
+        solidIndex: solidIndex++,
       });
       continue;
     }
@@ -155,12 +160,12 @@ function buildLinkTree(linkSolidNames: Map<string, string[]>): SerializedTreeNod
       id: `node_link_${linkName}`,
       name: linkName,
       type: "compound",
-      children: names.map(name => ({
+      children: names.map((name) => ({
         id: `node_solid_${solidIndex}`,
         name,
         type: "solid" as const,
-        solidIndex: solidIndex++
-      }))
+        solidIndex: solidIndex++,
+      })),
     });
   }
 

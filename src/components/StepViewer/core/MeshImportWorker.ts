@@ -70,9 +70,7 @@ function buildSolids(
   return components.map((component, index) =>
     componentToSolidData(
       component,
-      components.length === 1
-        ? baseName
-        : `${baseName}_${String(index + 1).padStart(pad, "0")}`,
+      components.length === 1 ? baseName : `${baseName}_${String(index + 1).padStart(pad, "0")}`,
       options.color,
       options.maxFaceGroups,
     ),

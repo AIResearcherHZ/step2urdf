@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, toRaw } from "vue";
 import { ElMessage } from "element-plus";
 import { UploadFilled } from "@element-plus/icons-vue";
 import type { UploadFile, UploadInstance } from "element-plus";
@@ -137,14 +137,14 @@ async function handleFileChange(uploadFile: UploadFile): Promise<void> {
   }
   fileName.value = raw.name;
   fileText.value = await raw.text();
-  if (/\.xml$/.test(name) && /<\s*mujoco[\s>]/i.test(fileText.value)) unit.value = "m";
+  if (name.endsWith('.xml') && /<\s*mujoco[\s>]/i.test(fileText.value)) unit.value = "m";
   parseCurrent();
 }
 
 function applyImport(): void {
   if (!report.value) return;
 
-  const robot = JSON.parse(JSON.stringify(report.value.robot));
+  const robot = structuredClone(toRaw(report.value.robot));
   ensureBaseLink(robot);
   urdfStore.importRobot(robot);
 

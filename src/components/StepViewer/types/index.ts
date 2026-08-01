@@ -1,4 +1,4 @@
-import type { Mesh, Vector3, LineSegments } from "three";
+import type { Mesh, Vector3, LineSegments, Matrix4 } from "three";
 
 export interface FileValidationResult {
   valid: boolean;
@@ -85,6 +85,7 @@ export interface SolidObject {
     center: Vector3;
   };
   instanceId?: number;
+  instanceBaseMatrix?: Matrix4;
   edgeVertexRange?: [number, number];
   topologyEdgeVertexRanges?: Map<number, [number, number]>;
   features: GeometryFeature[];
@@ -284,6 +285,7 @@ export interface SolidMassEntry {
   com: [number, number, number];
   refMass: number;
   inertiaAtCom: [number, number, number, number, number, number];
+  locked?: boolean;
 }
 
 export interface URDFOrigin {

@@ -1,6 +1,24 @@
 import * as THREE from "three";
 import type { URDFRobot, URDFJoint, URDFLink, SolidObject } from "../types";
 
+const IDENTITY = new THREE.Matrix4();
+
+function applySolidMatrix(solid: SolidObject, delta: THREE.Matrix4): void {
+  if (solid.instanceId !== undefined) {
+    const instancedMesh = solid.mesh as unknown as THREE.InstancedMesh;
+    const base = solid.instanceBaseMatrix;
+    const matrix = base ? new THREE.Matrix4().multiplyMatrices(delta, base) : delta;
+    instancedMesh.setMatrixAt(solid.instanceId, matrix);
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    return;
+  }
+
+  const isIdentity = delta === IDENTITY;
+  solid.mesh.matrixAutoUpdate = isIdentity;
+  solid.mesh.matrix.copy(delta);
+  solid.mesh.matrixWorldNeedsUpdate = true;
+}
+
 export class ForwardKinematics {
   private robot: URDFRobot | null = null;
 
@@ -145,6 +163,8 @@ export class ForwardKinematics {
     links: URDFLink[],
     solidMap: Map<string, SolidObject>,
   ): void {
+    const bound = new Set<string>();
+
     for (const link of links) {
       const worldMatrix = linkTransforms.get(link.id);
       if (!worldMatrix) continue;
@@ -159,38 +179,26 @@ export class ForwardKinematics {
       }
 
       for (const solidId of link.solidIds) {
+        bound.add(solidId);
         const solid = solidMap.get(solidId);
         if (!solid?.mesh) continue;
-
-        if (solid.instanceId !== undefined) {
-          const instancedMesh = solid.mesh as unknown as THREE.InstancedMesh;
-          instancedMesh.setMatrixAt(solid.instanceId, applyMatrix);
-          instancedMesh.instanceMatrix.needsUpdate = true;
-        } else {
-          solid.mesh.matrixAutoUpdate = false;
-          solid.mesh.matrix.copy(applyMatrix);
-          solid.mesh.matrixWorldNeedsUpdate = true;
-        }
+        applySolidMatrix(solid, applyMatrix);
       }
+    }
+
+    for (const [solidId, solid] of solidMap) {
+      if (bound.has(solidId) || !solid.mesh) continue;
+      if (solid.instanceId === undefined && solid.mesh.matrixAutoUpdate) continue;
+      applySolidMatrix(solid, IDENTITY);
     }
   }
 
   resetScene(links: URDFLink[], solidMap: Map<string, SolidObject>): void {
-    const identity = new THREE.Matrix4();
     for (const link of links) {
       for (const solidId of link.solidIds) {
         const solid = solidMap.get(solidId);
         if (!solid?.mesh) continue;
-
-        if (solid.instanceId !== undefined) {
-          const instancedMesh = solid.mesh as unknown as THREE.InstancedMesh;
-          instancedMesh.setMatrixAt(solid.instanceId, identity);
-          instancedMesh.instanceMatrix.needsUpdate = true;
-        } else {
-          solid.mesh.matrixAutoUpdate = true;
-          solid.mesh.matrix.identity();
-          solid.mesh.matrixWorldNeedsUpdate = true;
-        }
+        applySolidMatrix(solid, IDENTITY);
       }
     }
   }

@@ -28,7 +28,14 @@
         {{ scanning ? "正在扫描文件夹..." : "把机器人文件夹拖到此处" }}
       </p>
       <p class="pkg-drop-sub">或点击选择本地文件夹（也可多选描述文件与网格文件）</p>
-      <input ref="dirInputRef" type="file" multiple webkitdirectory class="pkg-hidden-input" @change="handleInputChange" />
+      <input
+        ref="dirInputRef"
+        type="file"
+        multiple
+        webkitdirectory
+        class="pkg-hidden-input"
+        @change="handleInputChange"
+      />
     </div>
 
     <div v-if="packageFiles.length > 0" class="pkg-summary">
@@ -115,7 +122,9 @@
 
     <template #footer>
       <el-button @click="emit('close')">取消</el-button>
-      <el-button type="primary" :loading="loading" :disabled="!selected" @click="applyPackage"> 加载并可视化 </el-button>
+      <el-button type="primary" :loading="loading" :disabled="!selected" @click="applyPackage">
+        加载并可视化
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -130,7 +139,7 @@ import {
   collectDescriptors,
   resolveLinkMeshes,
   type DescriptorCandidate,
-  type PackageFile
+  type PackageFile,
 } from "../../core/RobotPackage";
 import { loadRobotPackageGeometry } from "../../core/RobotPackageLoader";
 import { parseRobotText, ensureBaseLink, ROBOT_UNIT_SCALES } from "../../core/RobotImport";
@@ -160,7 +169,9 @@ const meshKind = ref<"visual" | "collision">("visual");
 const applyOrigin = ref(true);
 
 const meshIndex = computed(() => buildMeshIndex(packageFiles.value));
-const selected = computed(() => descriptors.value.find(d => d.path === selectedPath.value) ?? null);
+const selected = computed(
+  () => descriptors.value.find((d) => d.path === selectedPath.value) ?? null,
+);
 const rootName = computed(() => packageFiles.value[0]?.path.split("/")[0] ?? "");
 
 interface PreviewInfo {
@@ -183,21 +194,24 @@ function refreshPreview(): void {
 
   try {
     const parsed = parseRobotText(descriptor.text, {
-      unitScale: ROBOT_UNIT_SCALES[unit.value]
+      unitScale: ROBOT_UNIT_SCALES[unit.value],
     });
     const resolved = resolveLinkMeshes(descriptor, meshIndex.value, {
       visual: meshKind.value === "visual",
-      collision: meshKind.value === "collision"
+      collision: meshKind.value === "collision",
     });
-    const meshes = resolved.bindings.reduce((sum, b) => sum + b.refs.filter(r => !!r.file).length, 0);
+    const meshes = resolved.bindings.reduce(
+      (sum, b) => sum + b.refs.filter((r) => !!r.file).length,
+      0,
+    );
     preview.value = {
       links: parsed.robot.links.length,
       joints: parsed.robot.joints.length,
       loops: parsed.robot.loops.length,
-      movable: parsed.robot.joints.filter(j => j.type !== "fixed").length,
+      movable: parsed.robot.joints.filter((j) => j.type !== "fixed").length,
       meshes,
       missing: [...new Set(resolved.missing)],
-      warnings: parsed.warnings
+      warnings: parsed.warnings,
     };
   } catch (error) {
     errorText.value = error instanceof Error ? error.message : String(error);
@@ -267,24 +281,27 @@ async function applyPackage(): Promise<void> {
   try {
     const unitScale = ROBOT_UNIT_SCALES[unit.value];
     const parsed = parseRobotText(descriptor.text, { unitScale });
-    const robot = JSON.parse(JSON.stringify(parsed.robot));
+    const robot = structuredClone(parsed.robot);
     ensureBaseLink(robot);
 
     const resolved = resolveLinkMeshes(descriptor, meshIndex.value, {
       visual: meshKind.value === "visual",
-      collision: meshKind.value === "collision"
+      collision: meshKind.value === "collision",
     });
     const bindings = applyOrigin.value
       ? resolved.bindings
-      : resolved.bindings.map(b => ({
+      : resolved.bindings.map((b) => ({
           ...b,
-          refs: b.refs.map(r => ({
+          refs: b.refs.map((r) => ({
             ...r,
-            origin: { xyz: [0, 0, 0] as [number, number, number], rpy: [0, 0, 0] as [number, number, number] }
-          }))
+            origin: {
+              xyz: [0, 0, 0] as [number, number, number],
+              rpy: [0, 0, 0] as [number, number, number],
+            },
+          })),
         }));
 
-    const geometry = await loadRobotPackageGeometry(bindings, unitScale, robot, p => {
+    const geometry = await loadRobotPackageGeometry(bindings, unitScale, robot, (p) => {
       progressPercent.value = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
       progressText.value = p.current ? `正在加载 ${p.current}` : "网格加载完成";
     });
@@ -296,7 +313,11 @@ async function applyPackage(): Promise<void> {
       linkSolidNames: geometry.linkSolidNames,
       fileName: descriptor.name,
       triangles: geometry.triangles,
-      warnings: [...parsed.warnings, ...geometry.skipped, ...resolved.missing.map(m => `缺失网格：${m}`)]
+      warnings: [
+        ...parsed.warnings,
+        ...geometry.skipped,
+        ...resolved.missing.map((m) => `缺失网格：${m}`),
+      ],
     });
     emit("close");
   } catch (error) {

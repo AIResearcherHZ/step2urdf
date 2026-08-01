@@ -82,6 +82,7 @@ export async function distributeInertia(
       const fixed = fixedSolidMass?.get(e.solidId);
       if (fixed !== undefined && fixed > 0) {
         e.mass = fixed;
+        e.locked = true;
       } else {
         e.mass = unpinnedVolume > 0 ? (e.volume / unpinnedVolume) * residual : 0;
       }

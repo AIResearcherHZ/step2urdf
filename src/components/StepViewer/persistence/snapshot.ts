@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { toRaw } from "vue";
 import type { CameraConfig, URDFRobot } from "../types";
 import type { useStepViewerStore } from "../stores/useStepViewerStore";
 import type { useURDFStore } from "../stores/useURDFStore";
@@ -81,9 +82,10 @@ export function captureSnapshot(
       stats: computeStats(viewer, urdf),
     },
     urdf: {
-      robot: JSON.parse(JSON.stringify(urdf.robot)),
+      robot: structuredClone(toRaw(urdf.robot)),
       inertialFrame: "world",
       totalMass: urdf.totalMass,
+      lockedSolidIds: [...urdf.lockedSolidIds],
       exportFormat: urdf.exportFormat,
       baseLinkOrigin: urdf.baseLinkOrigin,
       baseLinkRPY: urdf.baseLinkRPY,
@@ -91,8 +93,8 @@ export function captureSnapshot(
       showFrames: urdf.showFrames,
     },
     collision: {
-      config: JSON.parse(JSON.stringify(urdf.collisionConfig)),
-      overrides: JSON.parse(JSON.stringify(urdf.collisionOverrides)),
+      config: structuredClone(toRaw(urdf.collisionConfig)),
+      overrides: structuredClone(toRaw(urdf.collisionOverrides)),
     },
     viewport: {
       camera: toCameraSection(options.camera),
@@ -113,7 +115,7 @@ export function captureSnapshot(
 }
 
 export function applyUrdfSection(urdf: UrdfStore, snapshot: ProjectSnapshot): boolean {
-  const robot: URDFRobot = JSON.parse(JSON.stringify(snapshot.urdf.robot));
+  const robot: URDFRobot = structuredClone(snapshot.urdf.robot);
 
   const legacyInertials = snapshot.urdf.inertialFrame !== "world";
   let cleared = false;
@@ -127,13 +129,14 @@ export function applyUrdfSection(urdf: UrdfStore, snapshot: ProjectSnapshot): bo
 
   urdf.importRobot(robot);
   urdf.totalMass = snapshot.urdf.totalMass;
+  urdf.lockedSolidIds = legacyInertials ? [] : [...(snapshot.urdf.lockedSolidIds ?? [])];
   urdf.exportFormat = snapshot.urdf.exportFormat;
   urdf.baseLinkOrigin = snapshot.urdf.baseLinkOrigin;
   urdf.baseLinkRPY = snapshot.urdf.baseLinkRPY;
   urdf.axisHelperScale = snapshot.urdf.axisHelperScale;
   urdf.showFrames = snapshot.urdf.showFrames;
-  urdf.collisionConfig = JSON.parse(JSON.stringify(snapshot.collision.config));
-  urdf.collisionOverrides = JSON.parse(JSON.stringify(snapshot.collision.overrides));
+  urdf.collisionConfig = structuredClone(snapshot.collision.config);
+  urdf.collisionOverrides = structuredClone(snapshot.collision.overrides);
   return cleared;
 }
 

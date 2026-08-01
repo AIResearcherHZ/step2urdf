@@ -3,25 +3,34 @@ import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js
 import { FeatureType } from "../types";
 import type { GeometryFeature, SolidObject, SelectionInfo, GranularityMode } from "../types";
 
-const AXIS_PICK_FACE_TYPES = new Set<FeatureType>([FeatureType.CYLINDER, FeatureType.CONE, FeatureType.ARC, FeatureType.TORUS]);
+const AXIS_PICK_FACE_TYPES = new Set<FeatureType>([
+  FeatureType.CYLINDER,
+  FeatureType.CONE,
+  FeatureType.ARC,
+  FeatureType.TORUS,
+]);
 
-function projectPointOnAxis(point: THREE.Vector3, axisPoint: THREE.Vector3, axisDir: THREE.Vector3): THREE.Vector3 {
+function projectPointOnAxis(
+  point: THREE.Vector3,
+  axisPoint: THREE.Vector3,
+  axisDir: THREE.Vector3,
+): THREE.Vector3 {
   const dir = axisDir.clone().normalize();
   const d = point.clone().sub(axisPoint);
   return axisPoint.clone().addScaledVector(dir, d.dot(dir));
 }
 
-function rafThrottle<T extends (...args: any[]) => void>(fn: T): T & { cancel: () => void } {
+function rafThrottle<T extends (...args: never[]) => void>(fn: T): T & { cancel: () => void } {
   let rafId: number | null = null;
   let lastArgs: Parameters<T> | null = null;
 
-  const throttled = function (this: any, ...args: Parameters<T>) {
+  const throttled = function (...args: Parameters<T>) {
     lastArgs = args;
     if (rafId === null) {
       rafId = requestAnimationFrame(() => {
         rafId = null;
         if (lastArgs) {
-          fn.apply(this, lastArgs);
+          fn(...lastArgs);
           lastArgs = null;
         }
       });
@@ -93,6 +102,8 @@ export class SelectionManager {
 
   private edgeHighlightOverlays: Map<string, THREE.LineSegments> = new Map();
   private edgeHighlightMaterial!: THREE.LineBasicMaterial;
+  private hoverEdgeMaterial!: THREE.LineBasicMaterial;
+  private selectedEdgeMaterial!: THREE.LineBasicMaterial;
   private hoverEdgeOverlay: THREE.LineSegments | null = null;
 
   private granularityMode: GranularityMode = "solid";
@@ -159,7 +170,7 @@ export class SelectionManager {
 
     this.raycaster.params.Line = { threshold: 1 };
     this.raycaster.params.Points = { threshold: 1 };
-    (this.raycaster as any).firstHitOnly = true;
+    (this.raycaster as THREE.Raycaster & { firstHitOnly: boolean }).firstHitOnly = true;
 
     this.highlightColor = config.highlightColor ?? 0x00ff00;
     this.selectionColor = config.selectionColor ?? 0xff8800;
@@ -189,14 +200,28 @@ export class SelectionManager {
       depthTest: true,
       polygonOffset: true,
       polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1
+      polygonOffsetUnits: -1,
     });
 
     this.edgeHighlightMaterial = new THREE.LineBasicMaterial({
       color: 0xff6600,
       linewidth: 2,
       transparent: false,
-      depthTest: true
+      depthTest: true,
+    });
+
+    this.hoverEdgeMaterial = new THREE.LineBasicMaterial({
+      color: SelectionManager.EDGE_HOVER_COLOR,
+      depthTest: false,
+      transparent: true,
+      opacity: 1,
+    });
+
+    this.selectedEdgeMaterial = new THREE.LineBasicMaterial({
+      color: SelectionManager.EDGE_SELECTED_COLOR,
+      depthTest: false,
+      transparent: true,
+      opacity: 1,
     });
 
     this.orbitControls = config.controls ?? null;
@@ -256,14 +281,7 @@ export class SelectionManager {
     const intersects = this.getIntersects(event);
 
     if (intersects.length === 0) {
-      if (this.hoveredFeature) {
-        this.clearHoverHighlight();
-        this.hoveredFeature = null;
-        this.hoveredMesh = null;
-        this.hoveredSolid = null;
-        this.hoveredBrepFaceIndex = -1;
-        this.onRenderRequest?.();
-      }
+      this.resetHoverState();
       return;
     }
 
@@ -275,14 +293,7 @@ export class SelectionManager {
 
     const solid = this.findSolidFromIntersection(intersection);
     if (!solid) {
-      if (this.hoveredFeature) {
-        this.clearHoverHighlight();
-        this.hoveredFeature = null;
-        this.hoveredMesh = null;
-        this.hoveredSolid = null;
-        this.hoveredBrepFaceIndex = -1;
-        this.onRenderRequest?.();
-      }
+      this.resetHoverState();
       return;
     }
 
@@ -298,6 +309,16 @@ export class SelectionManager {
     this.hoveredMesh = mesh;
     this.hoveredSolid = solid;
     this.hoveredBrepFaceIndex = currentBrepFaceIndex;
+    this.onRenderRequest?.();
+  }
+
+  private resetHoverState(): void {
+    if (!this.hoveredFeature && !this.hoveredSolid && !this.hoveredMesh) return;
+    this.clearHoverHighlight();
+    this.hoveredFeature = null;
+    this.hoveredMesh = null;
+    this.hoveredSolid = null;
+    this.hoveredBrepFaceIndex = -1;
     this.onRenderRequest?.();
   }
 
@@ -337,44 +358,51 @@ export class SelectionManager {
 
   private createHoverEdgeOverlay(solid: SolidObject, edgeIndex: number): void {
     this.removeHoverEdgeOverlay();
-    if (!solid.topologyEdges) return;
+    const geo = this.buildEdgeOverlayGeometry(solid, edgeIndex);
+    if (!geo) return;
+
+    this.hoverEdgeOverlay = new THREE.LineSegments(geo, this.hoverEdgeMaterial);
+    this.hoverEdgeOverlay.renderOrder = 998;
+    this.hoverEdgeOverlay.matrixAutoUpdate = false;
+    this.hoverEdgeOverlay.matrix.copy(solid.topologyEdges!.matrixWorld);
+    this.scene.add(this.hoverEdgeOverlay);
+  }
+
+  private buildEdgeOverlayGeometry(
+    solid: SolidObject,
+    edgeIndex: number,
+  ): THREE.BufferGeometry | null {
+    if (!solid.topologyEdges) return null;
 
     const srcGeo = solid.topologyEdges.geometry;
     const edgeIndexAttr = srcGeo.getAttribute("edgeIndex") as THREE.BufferAttribute;
     const posAttr = srcGeo.getAttribute("position") as THREE.BufferAttribute;
-    if (!edgeIndexAttr || !posAttr) return;
+    if (!edgeIndexAttr || !posAttr) return null;
 
-    const positions: number[] = [];
+    let count = 0;
     for (let i = 0; i < edgeIndexAttr.count; i++) {
-      if (Math.floor(edgeIndexAttr.getX(i)) === edgeIndex) {
-        positions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-      }
+      if (Math.floor(edgeIndexAttr.getX(i)) === edgeIndex) count++;
     }
-    if (positions.length === 0) return;
+    if (count === 0) return null;
+
+    const positions = new Float32Array(count * 3);
+    let o = 0;
+    for (let i = 0; i < edgeIndexAttr.count; i++) {
+      if (Math.floor(edgeIndexAttr.getX(i)) !== edgeIndex) continue;
+      positions[o++] = posAttr.getX(i);
+      positions[o++] = posAttr.getY(i);
+      positions[o++] = posAttr.getZ(i);
+    }
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
-
-    this.hoverEdgeOverlay = new THREE.LineSegments(
-      geo,
-      new THREE.LineBasicMaterial({
-        color: SelectionManager.EDGE_HOVER_COLOR,
-        depthTest: false,
-        transparent: true,
-        opacity: 1
-      })
-    );
-    this.hoverEdgeOverlay.renderOrder = 998;
-    this.hoverEdgeOverlay.matrixAutoUpdate = false;
-    this.hoverEdgeOverlay.matrix.copy(solid.topologyEdges.matrixWorld);
-    this.scene.add(this.hoverEdgeOverlay);
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    return geo;
   }
 
   private removeHoverEdgeOverlay(): void {
     if (this.hoverEdgeOverlay) {
       this.scene.remove(this.hoverEdgeOverlay);
       this.hoverEdgeOverlay.geometry.dispose();
-      (this.hoverEdgeOverlay.material as THREE.Material).dispose();
       this.hoverEdgeOverlay = null;
     }
   }
@@ -387,7 +415,7 @@ export class SelectionManager {
       this.setEdgeVertexColors(
         solid.edgeLines,
         solid.edgeVertexRange,
-        hover ? SelectionManager.EDGE_HOVER_COLOR : SelectionManager.EDGE_DEFAULT_COLOR
+        hover ? SelectionManager.EDGE_HOVER_COLOR : SelectionManager.EDGE_DEFAULT_COLOR,
       );
     } else {
       const material = solid.edgeLines.material as THREE.LineBasicMaterial;
@@ -443,12 +471,8 @@ export class SelectionManager {
 
   setSolids(solids: SolidObject[]): void {
     this.clearSelectionInternal();
-    this.clearHoverHighlight();
-    this.hoveredFeature = null;
-    this.hoveredMesh = null;
-    this.hoveredSolid = null;
-    this.hoveredBrepFaceIndex = -1;
-    this.highlightMaterials.forEach(mat => mat.dispose());
+    this.resetHoverState();
+    this.highlightMaterials.forEach((mat) => mat.dispose());
     this.highlightMaterials.clear();
     this.originalMaterials.clear();
 
@@ -459,7 +483,7 @@ export class SelectionManager {
     this.instancedMeshToSolids.clear();
     this.instancedMeshRefs.clear();
 
-    solids.forEach(solid => {
+    solids.forEach((solid) => {
       this.solidIdMap.set(solid.id, solid);
       if (solid.instanceId !== undefined && solid.mesh instanceof THREE.InstancedMesh) {
         const uuid = solid.mesh.uuid;
@@ -480,7 +504,7 @@ export class SelectionManager {
 
   private updateCachedTopologyEdges(): void {
     const edgeSet = new Set<THREE.LineSegments>();
-    this.solids.forEach(s => {
+    this.solids.forEach((s) => {
       if (s.visible && s.topologyEdges) edgeSet.add(s.topologyEdges);
     });
     this.cachedTopologyEdges = Array.from(edgeSet);
@@ -488,7 +512,7 @@ export class SelectionManager {
 
   private updateCachedMeshes(): void {
     const meshSet = new Set<THREE.Mesh>();
-    this.solids.forEach(s => {
+    this.solids.forEach((s) => {
       if (s.visible) meshSet.add(s.mesh);
     });
     this.cachedMeshes = Array.from(meshSet);
@@ -497,9 +521,9 @@ export class SelectionManager {
   private buildFeatureIndexMap(): void {
     this.featureIndexMap.clear();
     this.edgeIndexMap.clear();
-    this.solids.forEach(solid => {
+    this.solids.forEach((solid) => {
       const featureMap = new Map<number, GeometryFeature>();
-      solid.features.forEach(feature => {
+      solid.features.forEach((feature) => {
         if (feature.faceIndex !== undefined) {
           featureMap.set(feature.faceIndex, feature);
         }
@@ -507,7 +531,7 @@ export class SelectionManager {
       this.featureIndexMap.set(solid.id, featureMap);
 
       const edgeMap = new Map<number, GeometryFeature>();
-      solid.edgeFeatures.forEach(feature => {
+      solid.edgeFeatures.forEach((feature) => {
         if (feature.edgeIndex !== undefined) {
           edgeMap.set(feature.edgeIndex, feature);
         }
@@ -518,13 +542,7 @@ export class SelectionManager {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (!enabled) {
-      this.clearHoverHighlight();
-      this.hoveredFeature = null;
-      this.hoveredMesh = null;
-      this.hoveredSolid = null;
-      this.hoveredBrepFaceIndex = -1;
-    }
+    if (!enabled) this.resetHoverState();
   }
 
   setSelectionMode(mode: "single" | "multi"): void {
@@ -605,7 +623,10 @@ export class SelectionManager {
     return this.meshToSolid.get(mesh) ?? null;
   }
 
-  private findFeatureAtPoint(solid: SolidObject, intersection: THREE.Intersection): GeometryFeature | null {
+  private findFeatureAtPoint(
+    solid: SolidObject,
+    intersection: THREE.Intersection,
+  ): GeometryFeature | null {
     const faceIdx = intersection.faceIndex;
     if (faceIdx === undefined || faceIdx === null) return null;
 
@@ -639,13 +660,13 @@ export class SelectionManager {
     feature: GeometryFeature,
     solid: SolidObject,
     intersection: THREE.Intersection,
-    event: MouseEvent
+    event: MouseEvent,
   ): void {
     const selectionInfo: SelectionInfo = {
       feature,
       solid,
       point: intersection.point.clone(),
-      distance: intersection.distance
+      distance: intersection.distance,
     };
 
     const isMulti = this.selectionMode === "multi" || event.ctrlKey || event.shiftKey;
@@ -660,7 +681,7 @@ export class SelectionManager {
         this.onSelectCallback?.({
           selections: this.getSelections(),
           removed: selectionInfo,
-          selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+          selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
         });
       } else {
         this.addSelection(feature);
@@ -668,7 +689,7 @@ export class SelectionManager {
         this.onSelectCallback?.({
           selections: this.getSelections(),
           added: selectionInfo,
-          selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+          selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
         });
       }
     } else {
@@ -678,7 +699,7 @@ export class SelectionManager {
       this.onSelectCallback?.({
         selections: this.getSelections(),
         added: selectionInfo,
-        selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+        selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
       });
     }
   }
@@ -709,7 +730,9 @@ export class SelectionManager {
     if (feature.solidId) {
       const solid = this.solidIdMap.get(feature.solidId);
       if (solid) {
-        const hasOtherSelectedFeature = Array.from(this.selectedFeatures.values()).some(f => f.solidId === feature.solidId);
+        const hasOtherSelectedFeature = Array.from(this.selectedFeatures.values()).some(
+          (f) => f.solidId === feature.solidId,
+        );
         if (!hasOtherSelectedFeature) {
           solid.selected = false;
           this.selectedSolids.delete(solid.id);
@@ -720,7 +743,7 @@ export class SelectionManager {
 
   private clearSelectionInternal(): void {
     const meshRestoreMap = new Map<string, { mesh: THREE.Mesh; solid: SolidObject }>();
-    this.selectedFeatures.forEach(feature => {
+    this.selectedFeatures.forEach((feature) => {
       if (feature.mesh && !(feature.mesh instanceof THREE.InstancedMesh)) {
         const meshKey = feature.mesh.uuid;
         if (!meshRestoreMap.has(meshKey)) {
@@ -753,7 +776,7 @@ export class SelectionManager {
           staleKeys.push(key);
         }
       });
-      staleKeys.forEach(k => this.highlightMaterials.delete(k));
+      staleKeys.forEach((k) => this.highlightMaterials.delete(k));
     });
 
     if (this.originalInstanceColors.size > 0) {
@@ -768,14 +791,14 @@ export class SelectionManager {
           updatedMeshes.add(meshUuid);
         }
       });
-      updatedMeshes.forEach(uuid => {
+      updatedMeshes.forEach((uuid) => {
         const instMesh = this.instancedMeshRefs.get(uuid);
         if (instMesh?.instanceColor) instMesh.instanceColor.needsUpdate = true;
       });
       this.originalInstanceColors.clear();
     }
 
-    previousSolidIds.forEach(solidId => {
+    previousSolidIds.forEach((solidId) => {
       const s = this.solidIdMap.get(solidId);
       if (s) {
         s.selected = false;
@@ -795,7 +818,7 @@ export class SelectionManager {
 
     this.onSelectCallback?.({
       selections: [],
-      selectedTreeNodeIds: []
+      selectedTreeNodeIds: [],
     });
   }
 
@@ -811,7 +834,7 @@ export class SelectionManager {
       }
       this.onSelectCallback?.({
         selections: this.getSelections(),
-        selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+        selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
       });
     }
   }
@@ -835,10 +858,14 @@ export class SelectionManager {
       }
     }
 
-    const treeIds = multi ? this.getSelectedTreeNodeIds() : this.selectedFeatures.size > 0 ? [solidId] : [];
+    const treeIds = multi
+      ? this.getSelectedTreeNodeIds()
+      : this.selectedFeatures.size > 0
+        ? [solidId]
+        : [];
     this.onSelectCallback?.({
       selections: this.getSelections(),
-      selectedTreeNodeIds: treeIds
+      selectedTreeNodeIds: treeIds,
     });
   }
 
@@ -873,7 +900,7 @@ export class SelectionManager {
       this.clearSelectionInternal();
     }
 
-    const feature = solid.features.find(f => f.faceIndex === faceIndex);
+    const feature = solid.features.find((f) => f.faceIndex === faceIndex);
     if (feature) {
       if (multi && this.selectedFeatures.has(feature.id)) {
         this.removeSelection(feature);
@@ -889,7 +916,7 @@ export class SelectionManager {
 
     this.onSelectCallback?.({
       selections: this.getSelections(),
-      selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+      selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
     });
   }
 
@@ -900,7 +927,7 @@ export class SelectionManager {
       this.setEdgeVertexColors(
         solid.edgeLines,
         solid.edgeVertexRange,
-        selected ? SelectionManager.EDGE_SELECTED_COLOR : SelectionManager.EDGE_DEFAULT_COLOR
+        selected ? SelectionManager.EDGE_SELECTED_COLOR : SelectionManager.EDGE_DEFAULT_COLOR,
       );
     } else {
       const material = solid.edgeLines.material as THREE.LineBasicMaterial;
@@ -916,7 +943,11 @@ export class SelectionManager {
     }
   }
 
-  private setEdgeVertexColors(edgeLines: THREE.LineSegments, range: [number, number], colorHex: number): void {
+  private setEdgeVertexColors(
+    edgeLines: THREE.LineSegments,
+    range: [number, number],
+    colorHex: number,
+  ): void {
     const colors = edgeLines.geometry.getAttribute("color") as THREE.BufferAttribute;
     if (!colors) return;
     const color = new THREE.Color(colorHex);
@@ -929,7 +960,7 @@ export class SelectionManager {
 
   private getSelectedTreeNodeIds(): string[] {
     const ids: string[] = [];
-    this.selectedFeatures.forEach(feature => {
+    this.selectedFeatures.forEach((feature) => {
       if (feature.treeNodeId) ids.push(feature.treeNodeId);
       if (feature.solidId) {
         const solidTreeId = feature.solidId;
@@ -940,13 +971,13 @@ export class SelectionManager {
   }
 
   getSelections(): SelectionInfo[] {
-    return Array.from(this.selectedFeatures.values()).map(feature => {
+    return Array.from(this.selectedFeatures.values()).map((feature) => {
       const solid = feature.solidId ? this.solidIdMap.get(feature.solidId) : undefined;
       return {
         feature,
         solid,
         point: feature.center?.clone() || new THREE.Vector3(),
-        distance: 0
+        distance: 0,
       };
     });
   }
@@ -989,7 +1020,7 @@ export class SelectionManager {
         transparent: true,
         opacity: origMat?.opacity ?? 1,
         depthWrite: (origMat?.opacity ?? 1) >= 1,
-        emissive: new THREE.Color(color).multiplyScalar(0.2)
+        emissive: new THREE.Color(color).multiplyScalar(0.2),
       });
       this.highlightMaterials.set(`${meshKey}_${color}`, highlightMaterial);
     }
@@ -1016,7 +1047,7 @@ export class SelectionManager {
     const meshKey = feature.mesh.uuid;
 
     let otherFeatureOnSameMesh = false;
-    this.selectedFeatures.forEach(f => {
+    this.selectedFeatures.forEach((f) => {
       if (f.id !== feature.id && f.mesh === feature.mesh) {
         otherFeatureOnSameMesh = true;
       }
@@ -1043,7 +1074,7 @@ export class SelectionManager {
           keysToDelete.push(key);
         }
       });
-      keysToDelete.forEach(key => this.highlightMaterials.delete(key));
+      keysToDelete.forEach((key) => this.highlightMaterials.delete(key));
     }
   }
 
@@ -1063,43 +1094,40 @@ export class SelectionManager {
     const index = geometry.getIndex();
     const targetFaceIndex = feature.faceIndex;
 
-    const positions: number[] = [];
-    const normals: number[] = [];
-
-    const addVertex = (vertIdx: number) => {
-      positions.push(posAttr.getX(vertIdx), posAttr.getY(vertIdx), posAttr.getZ(vertIdx));
-      if (normalAttr) {
-        normals.push(normalAttr.getX(vertIdx), normalAttr.getY(vertIdx), normalAttr.getZ(vertIdx));
-      }
-    };
-
+    const sourceIndices: number[] = [];
     if (index) {
       for (let i = 0; i < index.count; i += 3) {
-        const vi = index.getX(i);
-        const brepFace = Math.floor(faceIndexAttr.getX(vi));
-        if (brepFace === targetFaceIndex) {
-          for (let j = 0; j < 3; j++) {
-            addVertex(index.getX(i + j));
-          }
-        }
+        if (Math.floor(faceIndexAttr.getX(index.getX(i))) !== targetFaceIndex) continue;
+        sourceIndices.push(index.getX(i), index.getX(i + 1), index.getX(i + 2));
       }
     } else {
       for (let i = 0; i < posAttr.count; i += 3) {
-        const brepFace = Math.floor(faceIndexAttr.getX(i));
-        if (brepFace === targetFaceIndex) {
-          for (let j = 0; j < 3; j++) {
-            addVertex(i + j);
-          }
-        }
+        if (Math.floor(faceIndexAttr.getX(i)) !== targetFaceIndex) continue;
+        sourceIndices.push(i, i + 1, i + 2);
       }
     }
 
-    if (positions.length === 0) return;
+    if (sourceIndices.length === 0) return;
+
+    const positions = new Float32Array(sourceIndices.length * 3);
+    const normals = normalAttr ? new Float32Array(sourceIndices.length * 3) : null;
+    for (let i = 0; i < sourceIndices.length; i++) {
+      const v = sourceIndices[i];
+      const o = i * 3;
+      positions[o] = posAttr.getX(v);
+      positions[o + 1] = posAttr.getY(v);
+      positions[o + 2] = posAttr.getZ(v);
+      if (normals) {
+        normals[o] = normalAttr.getX(v);
+        normals[o + 1] = normalAttr.getY(v);
+        normals[o + 2] = normalAttr.getZ(v);
+      }
+    }
 
     const overlayGeo = new THREE.BufferGeometry();
-    overlayGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    if (normals.length > 0) {
-      overlayGeo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+    overlayGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    if (normals) {
+      overlayGeo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
     }
 
     const overlayMesh = new THREE.Mesh(overlayGeo, this.faceHighlightMaterial);
@@ -1126,7 +1154,7 @@ export class SelectionManager {
   }
 
   clearAllFaceHighlights(): void {
-    this.faceHighlightOverlays.forEach(overlay => {
+    this.faceHighlightOverlays.forEach((overlay) => {
       this.scene.remove(overlay);
       overlay.geometry.dispose();
     });
@@ -1134,11 +1162,11 @@ export class SelectionManager {
   }
 
   setOpacity(solidId: string | null, opacity: number): void {
-    const targets = solidId ? this.solids.filter(s => s.id === solidId) : this.solids;
+    const targets = solidId ? this.solids.filter((s) => s.id === solidId) : this.solids;
 
     const isTransparent = opacity < 1;
 
-    targets.forEach(solid => {
+    targets.forEach((solid) => {
       solid.opacity = opacity;
       const material = solid.mesh.material as THREE.MeshStandardMaterial;
       if (material) {
@@ -1179,7 +1207,7 @@ export class SelectionManager {
         this.setOpacity(solidId, newOpacity);
       }
     } else {
-      const anyOpaque = this.solids.some(s => s.opacity > 0.5);
+      const anyOpaque = this.solids.some((s) => s.opacity > 0.5);
       const newOpacity = anyOpaque ? 0.3 : 1;
       this.setOpacity(null, newOpacity);
     }
@@ -1204,7 +1232,7 @@ export class SelectionManager {
     this.axisCandidateIndex = 0;
     this.lastAxisPickEvent = null;
 
-    this.solids.forEach(s => {
+    this.solids.forEach((s) => {
       if (s.topologyEdges) {
         s.topologyEdges.visible = mode === "edge";
       }
@@ -1212,7 +1240,7 @@ export class SelectionManager {
 
     this.onSelectCallback?.({
       selections: [],
-      selectedTreeNodeIds: []
+      selectedTreeNodeIds: [],
     });
 
     this.onRenderRequest?.();
@@ -1266,7 +1294,7 @@ export class SelectionManager {
       this.onAxisCandidatesCallback?.({
         index: this.axisCandidateIndex,
         total: this.axisCandidates.length,
-        description: candidate.description
+        description: candidate.description,
       });
       return;
     }
@@ -1274,7 +1302,11 @@ export class SelectionManager {
     this.clearHoverHighlight();
 
     if (candidate.kind === "edge" && !this.selectedFeatures.has(candidate.feature.id)) {
-      this.setTopologyEdgeColor(candidate.solid, candidate.edgeIndex, SelectionManager.EDGE_HOVER_COLOR);
+      this.setTopologyEdgeColor(
+        candidate.solid,
+        candidate.edgeIndex,
+        SelectionManager.EDGE_HOVER_COLOR,
+      );
       this.createHoverEdgeOverlay(candidate.solid, candidate.edgeIndex);
     }
 
@@ -1285,7 +1317,7 @@ export class SelectionManager {
     this.onAxisCandidatesCallback?.({
       index: this.axisCandidateIndex,
       total: this.axisCandidates.length,
-      description: candidate.description
+      description: candidate.description,
     });
     this.onRenderRequest?.();
   }
@@ -1296,7 +1328,8 @@ export class SelectionManager {
     const my = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     const ndc = new THREE.Vector2(mx, my);
 
-    const camDist = this.camera instanceof THREE.PerspectiveCamera ? this.camera.position.length() : 100;
+    const camDist =
+      this.camera instanceof THREE.PerspectiveCamera ? this.camera.position.length() : 100;
     const lineThreshold = Math.max(0.5, Math.min(5, camDist * 0.005));
 
     const results: AxisPickCandidate[] = [];
@@ -1319,7 +1352,7 @@ export class SelectionManager {
         edgeIndex: resolved.edgeIndex,
         kind: "edge",
         distance: hit.distance,
-        description: this.describeCandidate(resolved.feature, "edge")
+        description: this.describeCandidate(resolved.feature, "edge"),
       });
     }
 
@@ -1347,7 +1380,7 @@ export class SelectionManager {
         edgeIndex: -1,
         kind: "face",
         distance: hit.distance,
-        description: this.describeCandidate(feature, "face")
+        description: this.describeCandidate(feature, "face"),
       });
     }
 
@@ -1421,7 +1454,7 @@ export class SelectionManager {
       feature,
       solid,
       point: feature.startPoint?.clone() || new THREE.Vector3(),
-      distance: 0
+      distance: 0,
     };
 
     const isMulti = this.selectionMode === "multi" || event.ctrlKey || event.shiftKey;
@@ -1433,7 +1466,7 @@ export class SelectionManager {
         this.onSelectCallback?.({
           selections: this.getSelections(),
           removed: selectionInfo,
-          selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+          selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
         });
       } else {
         this.selectedFeatures.set(feature.id, feature);
@@ -1448,7 +1481,7 @@ export class SelectionManager {
         this.onSelectCallback?.({
           selections: this.getSelections(),
           added: selectionInfo,
-          selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+          selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
         });
       }
     } else {
@@ -1465,7 +1498,7 @@ export class SelectionManager {
       this.onSelectCallback?.({
         selections: this.getSelections(),
         added: selectionInfo,
-        selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+        selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
       });
     }
   }
@@ -1479,31 +1512,10 @@ export class SelectionManager {
 
     this.setTopologyEdgeColor(solid, feature.edgeIndex, SelectionManager.EDGE_SELECTED_COLOR);
 
-    const srcGeo = solid.topologyEdges.geometry;
-    const edgeIndexAttr = srcGeo.getAttribute("edgeIndex") as THREE.BufferAttribute;
-    const posAttr = srcGeo.getAttribute("position") as THREE.BufferAttribute;
-    if (!edgeIndexAttr || !posAttr) return;
+    const overlayGeo = this.buildEdgeOverlayGeometry(solid, feature.edgeIndex);
+    if (!overlayGeo) return;
 
-    const positions: number[] = [];
-    for (let i = 0; i < edgeIndexAttr.count; i++) {
-      if (Math.floor(edgeIndexAttr.getX(i)) === feature.edgeIndex) {
-        positions.push(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
-      }
-    }
-    if (positions.length === 0) return;
-
-    const overlayGeo = new THREE.BufferGeometry();
-    overlayGeo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(positions), 3));
-
-    const overlay = new THREE.LineSegments(
-      overlayGeo,
-      new THREE.LineBasicMaterial({
-        color: SelectionManager.EDGE_SELECTED_COLOR,
-        depthTest: false,
-        transparent: true,
-        opacity: 1
-      })
-    );
+    const overlay = new THREE.LineSegments(overlayGeo, this.selectedEdgeMaterial);
     overlay.renderOrder = 999;
     overlay.matrixAutoUpdate = false;
     overlay.matrix.copy(solid.topologyEdges.matrixWorld);
@@ -1515,7 +1527,7 @@ export class SelectionManager {
   removeEdgeHighlight(feature: GeometryFeature): void {
     if (!feature.solidId || feature.edgeIndex === undefined) return;
 
-    const solid = feature.solidId ? this.solidIdMap.get(feature.solidId) : undefined;
+    const solid = this.solidIdMap.get(feature.solidId);
     if (solid?.topologyEdges) {
       this.setTopologyEdgeColor(solid, feature.edgeIndex, 0x444444);
     }
@@ -1524,29 +1536,25 @@ export class SelectionManager {
     if (overlay) {
       this.scene.remove(overlay);
       overlay.geometry.dispose();
-      (overlay.material as THREE.Material).dispose();
       this.edgeHighlightOverlays.delete(feature.id);
     }
   }
 
   clearAllEdgeHighlights(): void {
-    this.solids.forEach(solid => {
-      if (solid.topologyEdges) {
-        const geo = solid.topologyEdges.geometry;
-        const colAttr = geo.getAttribute("color") as THREE.BufferAttribute;
-        if (colAttr) {
-          const defaultColor = new THREE.Color(0x444444);
-          for (let i = 0; i < colAttr.count; i++) {
-            colAttr.setXYZ(i, defaultColor.r, defaultColor.g, defaultColor.b);
-          }
-          colAttr.needsUpdate = true;
-        }
+    const defaultColor = new THREE.Color(0x444444);
+    for (const solid of this.solids) {
+      const colAttr = solid.topologyEdges?.geometry.getAttribute("color") as
+        | THREE.BufferAttribute
+        | undefined;
+      if (!colAttr) continue;
+      for (let i = 0; i < colAttr.count; i++) {
+        colAttr.setXYZ(i, defaultColor.r, defaultColor.g, defaultColor.b);
       }
-    });
-    this.edgeHighlightOverlays.forEach(overlay => {
+      colAttr.needsUpdate = true;
+    }
+    this.edgeHighlightOverlays.forEach((overlay) => {
       this.scene.remove(overlay);
       overlay.geometry.dispose();
-      (overlay.material as THREE.Material).dispose();
     });
     this.edgeHighlightOverlays.clear();
   }
@@ -1595,7 +1603,7 @@ export class SelectionManager {
       this.clearSelectionInternal();
     }
 
-    const feature = solid.edgeFeatures.find(f => f.edgeIndex === edgeIndex);
+    const feature = solid.edgeFeatures.find((f) => f.edgeIndex === edgeIndex);
     if (feature) {
       if (multi && this.selectedFeatures.has(feature.id)) {
         this.removeSelection(feature);
@@ -1610,7 +1618,7 @@ export class SelectionManager {
 
     this.onSelectCallback?.({
       selections: this.getSelections(),
-      selectedTreeNodeIds: this.getSelectedTreeNodeIds()
+      selectedTreeNodeIds: this.getSelectedTreeNodeIds(),
     });
   }
 
@@ -1657,7 +1665,7 @@ export class SelectionManager {
     this.domElement.removeEventListener("mouseleave", this.handleMouseLeave);
     this.domElement.removeEventListener("contextmenu", this.handleContextMenu);
 
-    this.highlightMaterials.forEach(mat => mat.dispose());
+    this.highlightMaterials.forEach((mat) => mat.dispose());
     this.highlightMaterials.clear();
     this.originalMaterials.clear();
     this.originalInstanceColors.clear();
@@ -1670,6 +1678,8 @@ export class SelectionManager {
     this.removeHoverEdgeOverlay();
     this.faceHighlightMaterial.dispose();
     this.edgeHighlightMaterial.dispose();
+    this.hoverEdgeMaterial.dispose();
+    this.selectedEdgeMaterial.dispose();
     this.featureIndexMap.clear();
     this.edgeIndexMap.clear();
     this.meshToSolid.clear();

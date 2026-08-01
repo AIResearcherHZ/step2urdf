@@ -1,17 +1,11 @@
 import * as Comlink from "comlink";
 import type { KinematicsWorkerApi } from "./KinematicsWorker";
 import type { KinematicsResult } from "../types";
+import { createWorkerClient } from "./workerClient";
 
-let worker: Worker | null = null;
-let workerProxy: Comlink.Remote<KinematicsWorkerApi> | null = null;
-
-function getProxy(): Comlink.Remote<KinematicsWorkerApi> {
-  if (!workerProxy) {
-    worker = new Worker(new URL("./KinematicsWorker.ts", import.meta.url), { type: "module" });
-    workerProxy = Comlink.wrap<KinematicsWorkerApi>(worker);
-  }
-  return workerProxy;
-}
+const client = createWorkerClient<KinematicsWorkerApi>(
+  () => new Worker(new URL("./KinematicsWorker.ts", import.meta.url), { type: "module" }),
+);
 
 export async function computeRelativeTransform(
   parentWorldMatrix: ArrayLike<number>,
@@ -19,35 +13,25 @@ export async function computeRelativeTransform(
   snapNormal: [number, number, number],
   frameBasis?: ArrayLike<number>,
 ): Promise<KinematicsResult> {
-  const proxy = getProxy();
-
-  const matBuf = new Float32Array(16);
-  for (let i = 0; i < 16; i++) matBuf[i] = parentWorldMatrix[i];
-
-  const posBuf = new Float32Array(snapPosition);
-  const normBuf = new Float32Array(snapNormal);
-  const frameBuf = frameBasis ? new Float32Array(Array.from(frameBasis)) : undefined;
+  const matBuf = Float32Array.from(parentWorldMatrix);
+  const posBuf = Float32Array.from(snapPosition);
+  const normBuf = Float32Array.from(snapNormal);
+  const frameBuf = frameBasis ? Float32Array.from(frameBasis) : undefined;
 
   try {
-    const result = await proxy.computeRelativeTransform(
-      Comlink.transfer(matBuf, [matBuf.buffer]),
-      Comlink.transfer(posBuf, [posBuf.buffer]),
-      Comlink.transfer(normBuf, [normBuf.buffer]),
-      frameBuf ? Comlink.transfer(frameBuf, [frameBuf.buffer]) : undefined,
-    );
-    return result;
+    return await client
+      .get()
+      .computeRelativeTransform(
+        Comlink.transfer(matBuf, [matBuf.buffer]),
+        Comlink.transfer(posBuf, [posBuf.buffer]),
+        Comlink.transfer(normBuf, [normBuf.buffer]),
+        frameBuf ? Comlink.transfer(frameBuf, [frameBuf.buffer]) : undefined,
+      );
   } catch {
     return { xyz: [0, 0, 0], rpy: [0, 0, 0] };
   }
 }
 
 export function disposeKinematicsWorker(): void {
-  if (workerProxy) {
-    workerProxy[Comlink.releaseProxy]();
-    workerProxy = null;
-  }
-  if (worker) {
-    worker.terminate();
-    worker = null;
-  }
+  client.dispose();
 }

@@ -218,7 +218,6 @@ async function confirmRemove(project: ProjectRecord): Promise<void> {
     emit("remove", project.id);
   } catch {}
 }
-
 </script>
 
 <style lang="scss" scoped>

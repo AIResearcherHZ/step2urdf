@@ -160,7 +160,12 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     }
     if (inputs.length === 0) return 0;
 
-    const results = await distributeInertia(inputs, urdfStore.totalMass);
+    const locked = urdfStore.lockedSolidMassMap;
+    const results = await distributeInertia(
+      inputs,
+      urdfStore.totalMass,
+      locked.size > 0 ? locked : undefined,
+    );
     let filled = 0;
     for (const row of results) {
       if (!missing.has(row.linkId) || row.mass <= 0) continue;
@@ -384,15 +389,24 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
   }
 
   function handleBindingClick(feature: GeometryFeature): void {
-    if (!urdfStore.bindingMode.active || !urdfStore.bindingMode.targetLinkId) return;
+    const targetLinkId = urdfStore.bindingMode.targetLinkId;
+    if (!urdfStore.bindingMode.active || !targetLinkId) return;
     if (!feature.solidId) return;
 
-    if (urdfStore.boundSolidIds.has(feature.solidId)) {
-      ElMessage.warning("该 Solid 已被其他 Link 绑定");
+    const owner = urdfStore.findSolidOwner(feature.solidId);
+    if (owner && owner.id === targetLinkId) {
+      urdfStore.unbindSolid(targetLinkId, feature.solidId);
+      updateFKAndFrames();
+      ElMessage.info("已从当前 Link 解绑该 Solid");
       return;
     }
 
-    urdfStore.bindSolid(urdfStore.bindingMode.targetLinkId, feature.solidId);
+    urdfStore.bindSolid(targetLinkId, feature.solidId);
+    updateFKAndFrames();
+    if (owner) {
+      const target = urdfStore.linkMap.get(targetLinkId);
+      ElMessage.success(`已从「${owner.name}」改绑到「${target?.name ?? targetLinkId}」`);
+    }
   }
 
   function startEdgePickMode(): void {

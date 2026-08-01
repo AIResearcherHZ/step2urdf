@@ -456,10 +456,7 @@ function splitClosureJoints(
   return loops;
 }
 
-function computeWorldPositions(
-  links: URDFLink[],
-  joints: URDFJoint[],
-): Map<string, THREE.Matrix4> {
+function computeWorldPositions(links: URDFLink[], joints: URDFJoint[]): Map<string, THREE.Matrix4> {
   const result = new Map<string, THREE.Matrix4>();
   const childIds = new Set(joints.map((j) => j.childLinkId));
   const jointsByParent = new Map<string, URDFJoint[]>();
@@ -494,7 +491,11 @@ function computeWorldPositions(
   return result;
 }
 
-function extractLoopComments(robotEl: Element, links: URDFLink[], unitScale: number): LoopClosure[] {
+function extractLoopComments(
+  robotEl: Element,
+  links: URDFLink[],
+  unitScale: number,
+): LoopClosure[] {
   const loops: LoopClosure[] = [];
   const idOfName = new Map(links.map((l) => [l.name, l.id]));
 

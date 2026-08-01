@@ -60,9 +60,8 @@ function databaseExists(name: string): Promise<boolean> {
 
 async function databaseNames(): Promise<string[]> {
   try {
-    const enumerate = (
-      indexedDB as IDBFactory & { databases?: () => Promise<{ name?: string }[]> }
-    ).databases;
+    const enumerate = (indexedDB as IDBFactory & { databases?: () => Promise<{ name?: string }[]> })
+      .databases;
     if (typeof enumerate === "function") {
       const list = await enumerate.call(indexedDB);
       const names = list.map((entry) => entry?.name).filter((name): name is string => !!name);

@@ -65,13 +65,16 @@ export function isMeshPath(path: string): boolean {
   return MESH_EXT.test(path);
 }
 
-function parseVec(text: string | null, fallback: [number, number, number]): [number, number, number] {
+function parseVec(
+  text: string | null,
+  fallback: [number, number, number],
+): [number, number, number] {
   if (!text) return fallback;
   const nums = text
     .trim()
     .split(/[\s,]+/)
-    .map(v => parseFloat(v))
-    .filter(v => Number.isFinite(v));
+    .map((v) => parseFloat(v))
+    .filter((v) => Number.isFinite(v));
   if (nums.length === 0) return fallback;
   if (nums.length === 1) return [nums[0], nums[0], nums[0]];
   return [nums[0] ?? fallback[0], nums[1] ?? fallback[1], nums[2] ?? fallback[2]];
@@ -81,7 +84,7 @@ function parseOriginEl(el: Element | null): URDFOrigin {
   if (!el) return { xyz: [0, 0, 0], rpy: [0, 0, 0] };
   return {
     xyz: parseVec(el.getAttribute("xyz"), [0, 0, 0]),
-    rpy: parseVec(el.getAttribute("rpy"), [0, 0, 0])
+    rpy: parseVec(el.getAttribute("rpy"), [0, 0, 0]),
   };
 }
 
@@ -119,7 +122,7 @@ function extractUrdfMeshRefs(doc: Document): Map<string, MeshRef[]> {
     const refs: MeshRef[] = [];
 
     for (const kind of ["visual", "collision"] as const) {
-      linkEl.querySelectorAll(`:scope > ${kind}`).forEach(el => {
+      linkEl.querySelectorAll(`:scope > ${kind}`).forEach((el) => {
         const meshEl = el.querySelector("geometry > mesh");
         const raw = meshEl?.getAttribute("filename");
         if (!meshEl || !raw) return;
@@ -127,7 +130,7 @@ function extractUrdfMeshRefs(doc: Document): Map<string, MeshRef[]> {
           raw,
           kind,
           origin: parseOriginEl(el.querySelector(":scope > origin")),
-          scale: parseVec(meshEl.getAttribute("scale"), [1, 1, 1])
+          scale: parseVec(meshEl.getAttribute("scale"), [1, 1, 1]),
         });
       });
     }
@@ -145,13 +148,13 @@ function extractMjcfMeshRefs(doc: Document): Map<string, MeshRef[]> {
 
   const meshDir = normalizePath(root.querySelector("compiler")?.getAttribute("meshdir") || "");
   const assets = new Map<string, { file: string; scale: [number, number, number] }>();
-  root.querySelectorAll("asset > mesh").forEach(el => {
+  root.querySelectorAll("asset > mesh").forEach((el) => {
     const file = el.getAttribute("file");
     if (!file) return;
     const name = el.getAttribute("name") || baseOf(file).replace(MESH_EXT, "");
     assets.set(name, {
       file: meshDir ? `${meshDir.replace(/\/?$/, "/")}${file}` : file,
-      scale: parseVec(el.getAttribute("scale"), [1, 1, 1])
+      scale: parseVec(el.getAttribute("scale"), [1, 1, 1]),
     });
   });
   if (assets.size === 0) return result;
@@ -164,21 +167,27 @@ function extractMjcfMeshRefs(doc: Document): Map<string, MeshRef[]> {
     const refs: MeshRef[] = [];
 
     Array.from(bodyEl.children)
-      .filter(el => el.tagName === "geom")
-      .forEach(geomEl => {
+      .filter((el) => el.tagName === "geom")
+      .forEach((geomEl) => {
         const meshName = geomEl.getAttribute("mesh");
         if (!meshName) return;
         const asset = assets.get(meshName);
         if (!asset) return;
         const pos = parseVec(geomEl.getAttribute("pos"), [0, 0, 0]);
         const quatRaw = geomEl.getAttribute("quat");
-        const rpy = quatRaw ? quatToRpy(parseVec4(quatRaw)) : ([0, 0, 0] as [number, number, number]);
+        const rpy = quatRaw
+          ? quatToRpy(parseVec4(quatRaw))
+          : ([0, 0, 0] as [number, number, number]);
         const geomScale = parseVec(geomEl.getAttribute("scale"), [1, 1, 1]);
         refs.push({
           raw: asset.file,
           kind: geomEl.getAttribute("class") === "collision" ? "collision" : "visual",
           origin: { xyz: pos, rpy },
-          scale: [asset.scale[0] * geomScale[0], asset.scale[1] * geomScale[1], asset.scale[2] * geomScale[2]]
+          scale: [
+            asset.scale[0] * geomScale[0],
+            asset.scale[1] * geomScale[1],
+            asset.scale[2] * geomScale[2],
+          ],
         });
       });
 
@@ -202,14 +211,14 @@ function parseVec4(text: string): [number, number, number, number] {
   const nums = text
     .trim()
     .split(/[\s,]+/)
-    .map(v => parseFloat(v));
+    .map((v) => parseFloat(v));
   return [nums[0] ?? 1, nums[1] ?? 0, nums[2] ?? 0, nums[3] ?? 0];
 }
 
 export function resolveMeshFile(
   raw: string,
   descriptorPath: string,
-  meshIndex: Map<string, File>
+  meshIndex: Map<string, File>,
 ): { file: File | null; resolvedPath: string | null } {
   const stripped = normalizePath(stripUriPrefix(raw));
   const dir = dirOf(descriptorPath);
@@ -218,7 +227,7 @@ export function resolveMeshFile(
     stripped,
     `${dir}meshes/${baseOf(stripped)}`,
     `meshes/${baseOf(stripped)}`,
-    baseOf(stripped)
+    baseOf(stripped),
   ];
 
   for (const candidate of candidates) {
@@ -267,7 +276,9 @@ export async function collectDescriptors(files: PackageFile[]): Promise<Descript
       doc.documentElement?.getAttribute("model") ||
       baseOf(entry.path).replace(/\.[^.]+$/, "");
     const linkCount =
-      format === "urdf" ? doc.querySelectorAll("robot > link").length : doc.querySelectorAll("worldbody body").length;
+      format === "urdf"
+        ? doc.querySelectorAll("robot > link").length
+        : doc.querySelectorAll("worldbody body").length;
     const refs = extractMeshRefs(text, format);
     let meshRefCount = 0;
     for (const list of refs.values()) meshRefCount += list.length;
@@ -280,7 +291,7 @@ export async function collectDescriptors(files: PackageFile[]): Promise<Descript
       size: entry.file.size,
       text,
       linkCount,
-      meshRefCount
+      meshRefCount,
     });
   }
 
@@ -290,7 +301,7 @@ export async function collectDescriptors(files: PackageFile[]): Promise<Descript
 export function resolveLinkMeshes(
   descriptor: DescriptorCandidate,
   meshIndex: Map<string, File>,
-  kinds: { visual: boolean; collision: boolean }
+  kinds: { visual: boolean; collision: boolean },
 ): { bindings: LinkMeshBinding[]; missing: string[] } {
   const refMap = extractMeshRefs(descriptor.text, descriptor.format);
   const bindings: LinkMeshBinding[] = [];
@@ -298,7 +309,7 @@ export function resolveLinkMeshes(
 
   for (const [linkName, refs] of refMap) {
     const picked: ResolvedMeshRef[] = [];
-    const wanted = refs.filter(r => (r.kind === "visual" ? kinds.visual : kinds.collision));
+    const wanted = refs.filter((r) => (r.kind === "visual" ? kinds.visual : kinds.collision));
     const source = wanted.length > 0 ? wanted : [];
 
     const seen = new Set<string>();

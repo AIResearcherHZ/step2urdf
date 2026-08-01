@@ -47,6 +47,7 @@
         @solid-hover="handleSolidHover"
         @toggle-solid-visibility="handleToggleSolidVisibility"
         @split-solid="handleSplitSolid"
+        @rename-solid="handleRenameSolid"
         @close="modelTreeVisible = false"
       />
 
@@ -76,7 +77,7 @@
 
         <div class="binding-overlay" v-if="urdfStore.bindingMode.active">
           <el-tag type="warning" effect="light">
-            点击 3D 场景中的 Solid 绑定到 Link
+            点击 3D 场景中的 Solid 绑定到 Link（已属其他 Link 会自动改绑，再次点击可解绑）
             <el-button size="small" text @click="urdfStore.stopBindingMode()">完成</el-button>
           </el-tag>
         </div>
@@ -394,6 +395,42 @@ async function handleRobotPackageLoaded(payload: RobotPackagePayload): Promise<v
       `有 ${payload.warnings.length} 条提示：${payload.warnings.slice(0, 2).join("；")}`,
     );
   }
+}
+
+async function handleRenameSolid(solidId: string): Promise<void> {
+  const solid = store.solidMap.get(solidId);
+  if (!solid) return;
+
+  let value: string;
+  try {
+    const result = await ElMessageBox.prompt("输入新的 Solid 名称", "重命名 Solid", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      inputValue: solid.name,
+      inputValidator: (v: string) => (v && v.trim().length > 0 ? true : "名称不能为空"),
+    });
+    value = result.value;
+  } catch {
+    return;
+  }
+
+  if (!store.renameSolid(solidId, value)) return;
+  const tree = currentTree;
+  if (tree) {
+    const node = findSerializedNode(tree, solidId);
+    if (node) node.name = value.trim();
+  }
+  void persistence.cacheGeometry(geometryEdit.currentSolidData(), currentTree);
+  ElMessage.success(`已重命名为「${value.trim()}」`);
+}
+
+function findSerializedNode(node: SerializedTreeNode, nodeId: string): SerializedTreeNode | null {
+  if (node.id === nodeId) return node;
+  for (const child of node.children ?? []) {
+    const hit = findSerializedNode(child, nodeId);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 async function handleSplitSolid(solidId: string): Promise<void> {
@@ -724,6 +761,9 @@ const effectiveHighlightSolidIds = computed<string[]>(() => {
     const link = urdfStore.linkMap.get(urdfStore.bindingMode.targetLinkId);
     return link?.solidIds.slice() ?? [];
   }
+  if (store.focusedSolidId && store.solidMap.has(store.focusedSolidId)) {
+    return [store.focusedSolidId];
+  }
   if (urdfStore.selectedLinkId) {
     const link = urdfStore.linkMap.get(urdfStore.selectedLinkId);
     return link?.solidIds.slice() ?? [];
@@ -889,6 +929,7 @@ async function initViewer(): Promise<void> {
       features[0].solidId
     ) {
       const solidId = features[0].solidId;
+      store.setFocusedSolid(solidId);
       const ownerLink = urdfStore.robot.links.find((l) => l.solidIds.includes(solidId));
       if (ownerLink) {
         urdfStore.selectedLinkId = ownerLink.id;
@@ -1159,6 +1200,7 @@ function handleTreeSelect(node: TreeNode, multi: boolean): void {
     const solidId = `solid_${node.solidIndex}`;
     const solid = store.solidMap.get(solidId);
     if (solid) {
+      store.setFocusedSolid(solid.id);
       selectionManager.selectBySolidId(solid.id, multi);
     }
   } else if (

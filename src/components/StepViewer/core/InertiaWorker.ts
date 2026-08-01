@@ -1,10 +1,5 @@
 import * as Comlink from "comlink";
-import type {
-  SerializedSolidData,
-  SolidMassProps,
-  InertialParams,
-  SolidInertiaResult,
-} from "../types";
+import type { SerializedSolidData, SolidMassProps, SolidInertiaResult } from "../types";
 
 const SUM_SLOTS = 10;
 
@@ -162,61 +157,6 @@ function meshMassProps(
 function solidMassProps(data: SerializedSolidData): SolidMassProps | null {
   if (data.massProps && data.massProps.volume > 0) return data.massProps;
   return meshMassProps(data.positions, data.indices);
-}
-
-interface Contribution {
-  mass: number;
-  com: [number, number, number];
-  scaledInertiaAtCom: [number, number, number, number, number, number];
-}
-
-function combine(parts: Contribution[]): InertialParams {
-  const valid = parts.filter((p) => p.mass > 0);
-  if (valid.length === 0) {
-    return { mass: 0, com: [0, 0, 0], inertia: [0, 0, 0, 0, 0, 0] };
-  }
-
-  let mass = 0;
-  let cx = 0,
-    cy = 0,
-    cz = 0;
-  for (const p of valid) {
-    mass += p.mass;
-    cx += p.mass * p.com[0];
-    cy += p.mass * p.com[1];
-    cz += p.mass * p.com[2];
-  }
-  const com: [number, number, number] = [cx / mass, cy / mass, cz / mass];
-
-  const inertia: InertialParams["inertia"] = [0, 0, 0, 0, 0, 0];
-  for (const p of valid) {
-    const dx = (p.com[0] - com[0]) * 1e-3;
-    const dy = (p.com[1] - com[1]) * 1e-3;
-    const dz = (p.com[2] - com[2]) * 1e-3;
-    const m = p.mass;
-    inertia[0] += p.scaledInertiaAtCom[0] + m * (dy * dy + dz * dz);
-    inertia[1] += p.scaledInertiaAtCom[1] - m * dx * dy;
-    inertia[2] += p.scaledInertiaAtCom[2] - m * dx * dz;
-    inertia[3] += p.scaledInertiaAtCom[3] + m * (dx * dx + dz * dz);
-    inertia[4] += p.scaledInertiaAtCom[4] - m * dy * dz;
-    inertia[5] += p.scaledInertiaAtCom[5] + m * (dx * dx + dy * dy);
-  }
-
-  return { mass, com, inertia };
-}
-
-function scaleInertia(
-  source: SolidMassProps["inertiaAtCom"],
-  factor: number,
-): [number, number, number, number, number, number] {
-  return [
-    source[0] * factor,
-    source[1] * factor,
-    source[2] * factor,
-    source[3] * factor,
-    source[4] * factor,
-    source[5] * factor,
-  ];
 }
 
 export const workerApi = {

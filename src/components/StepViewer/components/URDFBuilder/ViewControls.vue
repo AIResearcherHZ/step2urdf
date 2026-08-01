@@ -62,7 +62,9 @@
       </div>
 
       <el-button
-        v-hint="'按拓扑顺序把每个关节的坐标轴都对齐到全局 Z-up 右手系（rpy 全部归零），旋转轴改用向量表达；轴心、轴向与整机运动学保持不变'"
+        v-hint="
+          '按拓扑顺序把每个关节的坐标轴都对齐到全局 Z-up 右手系（rpy 全部归零），旋转轴改用向量表达；轴心、轴向与整机运动学保持不变'
+        "
         text
         type="primary"
         size="small"
@@ -92,7 +94,7 @@
 
         <div class="fk-body inertia-body">
           <el-alert
-            title="展开连杆可为每个 Solid 单独设置质量；连杆质心按各 Solid 质量加权求得，惯量按平行轴定理精确合成"
+            title="展开连杆可为每个 Solid 单独设置质量并点击 🔓 锁定；锁定后的 Solid 质量在修改整机总质量、重新计算或按体积分配时保持不变，剩余质量只在未锁定的 Solid 之间按体积分配"
             type="info"
             :closable="false"
             show-icon
@@ -111,6 +113,12 @@
               style="width: 160px"
             />
             <span class="param-unit">kg</span>
+            <el-tag v-if="lockedCount > 0" size="small" type="warning" effect="light">
+              已锁定 {{ lockedCount }} 个 Solid，共 {{ lockedMassSum.toFixed(3) }} kg
+            </el-tag>
+            <el-button v-if="lockedCount > 0" text type="info" size="small" @click="clearAllLocks">
+              全部解锁
+            </el-button>
           </div>
 
           <div v-if="computing" class="progress-row">
@@ -138,7 +146,7 @@
                   合计 {{ computedMassSum.toFixed(3) }} kg，与整机总质量相差
                   {{ massMismatch > 0 ? "+" : "" }}{{ massMismatch.toFixed(3) }} kg
                 </el-tag>
-                <el-button text type="info" @click="redistributeByVolume">按体积重新分配</el-button>
+                <el-button text type="info" @click="onRedistributeClick">按体积重新分配</el-button>
               </div>
             </div>
             <el-table
@@ -149,9 +157,41 @@
               <el-table-column type="expand">
                 <template #default="{ row }">
                   <div class="solid-detail">
-                    <div class="solid-detail-title">Solid 质量分配（{{ row.solids.length }} 个）</div>
+                    <div class="solid-detail-header">
+                      <span class="solid-detail-title">
+                        Solid 质量分配（{{ row.solids.length }} 个）
+                      </span>
+                      <el-button
+                        text
+                        type="info"
+                        size="small"
+                        @click="toggleLinkLock(row as ResultRow)"
+                      >
+                        {{
+                          row.solids.every((s: SolidMassEntry) => s.locked)
+                            ? "🔓 全部解锁"
+                            : "🔒 全部锁定"
+                        }}
+                      </el-button>
+                    </div>
                     <div v-for="s in row.solids" :key="s.solidId" class="solid-mass-row">
-                      <span class="solid-mass-name" :title="s.name">{{ s.name }}</span>
+                      <el-button
+                        v-hint="'锁定后该 Solid 的质量不会被总质量修改、重新计算或体积分配覆盖'"
+                        text
+                        size="small"
+                        class="solid-lock-btn"
+                        :type="s.locked ? 'warning' : 'info'"
+                        @click="toggleSolidLock(s)"
+                      >
+                        {{ s.locked ? "🔒" : "🔓" }}
+                      </el-button>
+                      <span
+                        class="solid-mass-name"
+                        :class="{ 'is-locked': s.locked }"
+                        :title="s.name"
+                      >
+                        {{ s.name }}
+                      </span>
                       <span class="solid-mass-vol">{{ formatVolume(s.volume) }}</span>
                       <el-input-number
                         v-model="s.mass"
@@ -165,6 +205,9 @@
                       />
                       <span class="solid-mass-unit">kg</span>
                       <span class="solid-mass-com">质心 {{ formatCom(s.com) }}</span>
+                      <span class="solid-mass-com" title="惯量主轴姿态，顺序 w, x, y, z">
+                        quat {{ formatQuat(s.inertiaAtCom) }}
+                      </span>
                     </div>
                   </div>
                 </template>
@@ -176,8 +219,13 @@
                 show-overflow-tooltip
                 align="center"
               />
-              <el-table-column label="Solids" width="72" align="center">
-                <template #default="{ row }">{{ row.solids.length }}</template>
+              <el-table-column label="Solids" width="92" align="center">
+                <template #default="{ row }">
+                  {{ row.solids.length }}
+                  <span v-if="row.solids.some((s: SolidMassEntry) => s.locked)" class="lock-badge">
+                    🔒{{ row.solids.filter((s: SolidMassEntry) => s.locked).length }}
+                  </span>
+                </template>
               </el-table-column>
               <el-table-column label="质量 (kg)" width="152" align="center">
                 <template #default="{ row }">
@@ -198,20 +246,35 @@
                   {{ formatCom(row.com) }}
                 </template>
               </el-table-column>
+              <el-table-column label="主轴 quat (w,x,y,z)" min-width="200" align="center">
+                <template #default="{ row }">
+                  {{ formatQuat(row.inertia) }}
+                </template>
+              </el-table-column>
             </el-table>
             <p class="edit-hint">
-              修改连杆质量会按当前各 Solid 质量比例同步缩放；单独修改 Solid 质量则连杆质量取各 Solid
-              之和。
+              修改连杆质量会按当前比例缩放该连杆内未锁定的 Solid；单独修改 Solid 质量则连杆质量取各
+              Solid 之和；修改整机总质量只影响未锁定的 Solid。
             </p>
           </div>
         </div>
 
         <div class="inertia-footer">
           <el-button text @click="inertiaPanelVisible = false">关闭</el-button>
-          <el-button type="primary" :loading="computing" :disabled="totalMass <= 0" @click="runCompute()">
+          <el-button
+            type="primary"
+            :loading="computing"
+            :disabled="totalMass <= 0"
+            @click="runCompute()"
+          >
             {{ computedResults.length > 0 ? "重新计算" : "开始计算" }}
           </el-button>
-          <el-button type="success" plain :disabled="computedResults.length === 0" @click="applyResults">
+          <el-button
+            type="success"
+            plain
+            :disabled="computedResults.length === 0"
+            @click="applyResults"
+          >
             应用到所有连杆
           </el-button>
         </div>
@@ -221,13 +284,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { vHint } from "../composables/useHintBar";
 import { Loading } from "@element-plus/icons-vue";
 import { useURDFStore } from "../../stores/useURDFStore";
 import { useStepViewerStore } from "../../stores/useStepViewerStore";
-import { combineSolidInertia } from "../../core/useInertiaWorker";
+import { combineSolidInertia, principalAxisQuat } from "../../core/useInertiaWorker";
 import { distributeInertia, type LinkInertiaInput } from "../../core/InertiaDistribution";
 import {
   UP_AXIS_OPTIONS,
@@ -271,6 +334,11 @@ function formatCom(com: [number, number, number]): string {
   return com.map((v) => v.toFixed(2)).join(", ");
 }
 
+function formatQuat(inertia: InertialParams["inertia"]): string {
+  const [x, y, z, w] = principalAxisQuat(inertia);
+  return [w, x, y, z].map((v) => v.toFixed(4)).join(", ");
+}
+
 function formatVolume(vMm3: number): string {
   if (vMm3 >= 1e6) return `${(vMm3 / 1e6).toFixed(3)} dm³`;
   if (vMm3 >= 1e3) return `${(vMm3 / 1e3).toFixed(3)} cm³`;
@@ -279,7 +347,7 @@ function formatVolume(vMm3: number): string {
 
 const inertiaPanelVisible = ref(false);
 
-const posX = ref(Math.max(40, window.innerWidth * 0.5 - 340));
+const posX = ref(Math.max(16, window.innerWidth * 0.5 - 440));
 const posY = ref(Math.max(40, window.innerHeight * 0.5 - 260));
 const panelStyle = computed(() => ({
   left: `${posX.value}px`,
@@ -357,31 +425,124 @@ function recalcRow(row: ResultRow): void {
 }
 
 function onLinkMassChange(row: ResultRow): void {
-  const current = row.solids.reduce((s, e) => s + e.mass, 0);
-  if (!Number.isFinite(row.mass) || row.mass <= 0 || current <= 0) return;
-  const k = row.mass / current;
-  for (const s of row.solids) s.mass *= k;
+  const unlocked = row.solids.filter((s) => !s.locked);
+  const lockedSum = row.solids.reduce((s, e) => s + (e.locked ? e.mass : 0), 0);
+  const current = unlocked.reduce((s, e) => s + e.mass, 0);
+  if (!Number.isFinite(row.mass) || row.mass <= 0) return;
+
+  if (unlocked.length === 0) {
+    ElMessage.warning("该连杆的所有 Solid 质量均已锁定，无法修改连杆质量");
+    row.mass = lockedSum;
+    recalcRow(row);
+    return;
+  }
+
+  const residual = row.mass - lockedSum;
+  if (residual <= 0) {
+    ElMessage.warning(`该连杆已锁定 ${lockedSum.toFixed(4)} kg，连杆质量不能小于该值`);
+    row.mass = lockedSum + current;
+    recalcRow(row);
+    return;
+  }
+
+  if (current > 0) {
+    const k = residual / current;
+    for (const s of unlocked) s.mass *= k;
+  } else {
+    const vol = unlocked.reduce((v, e) => v + e.volume, 0);
+    for (const s of unlocked)
+      s.mass = vol > 0 ? (s.volume / vol) * residual : residual / unlocked.length;
+  }
   recalcRow(row);
 }
 
-function redistributeByVolume(): void {
-  const totalVolume = computedResults.value.reduce(
-    (s, r) => s + r.solids.reduce((v, e) => v + e.volume, 0),
+function syncLockFlags(): void {
+  for (const row of computedResults.value) {
+    for (const s of row.solids) s.locked = urdfStore.isSolidMassLocked(s.solidId);
+  }
+}
+
+function toggleSolidLock(entry: SolidMassEntry): void {
+  const next = !entry.locked;
+  entry.locked = next;
+  urdfStore.setSolidMassLocked(entry.solidId, next);
+}
+
+function toggleLinkLock(row: ResultRow): void {
+  const next = !row.solids.every((s) => s.locked);
+  for (const s of row.solids) {
+    s.locked = next;
+    urdfStore.setSolidMassLocked(s.solidId, next);
+  }
+}
+
+function clearAllLocks(): void {
+  urdfStore.clearSolidMassLocks();
+  syncLockFlags();
+  ElMessage.success("已解除全部质量锁定");
+}
+
+const lockedCount = computed(() =>
+  computedResults.value.reduce((n, r) => n + r.solids.filter((s) => s.locked).length, 0),
+);
+
+const lockedMassSum = computed(() =>
+  computedResults.value.reduce(
+    (m, r) => m + r.solids.reduce((s, e) => s + (e.locked ? e.mass : 0), 0),
     0,
-  );
-  if (totalVolume <= 0) return;
+  ),
+);
+
+function redistributeByVolume(): boolean {
+  if (computedResults.value.length === 0) return false;
+
+  let lockedSum = 0;
+  let unlockedVolume = 0;
   for (const row of computedResults.value) {
     for (const s of row.solids) {
-      s.mass = (s.volume / totalVolume) * totalMass.value;
+      if (s.locked) lockedSum += s.mass;
+      else unlockedVolume += s.volume;
+    }
+  }
+
+  const residual = totalMass.value - lockedSum;
+  if (residual < 0) {
+    ElMessage.error(
+      `已锁定质量合计 ${lockedSum.toFixed(3)} kg，超过整机总质量 ${totalMass.value.toFixed(3)} kg`,
+    );
+    return false;
+  }
+  if (unlockedVolume <= 0) {
+    ElMessage.warning("所有 Solid 质量均已锁定，总质量修改不会生效");
+    return false;
+  }
+
+  for (const row of computedResults.value) {
+    for (const s of row.solids) {
+      if (s.locked) continue;
+      s.mass = (s.volume / unlockedVolume) * residual;
     }
     recalcRow(row);
   }
-  ElMessage.success("已按体积比重新分配质量");
+  return true;
 }
 
-const computedMassSum = computed(() =>
-  computedResults.value.reduce((s, r) => s + r.mass, 0),
-);
+function onRedistributeClick(): void {
+  if (redistributeByVolume()) {
+    ElMessage.success(
+      lockedCount.value > 0
+        ? `已按体积比重新分配未锁定质量（保留 ${lockedCount.value} 个锁定 Solid）`
+        : "已按体积比重新分配质量",
+    );
+  }
+}
+
+watch(totalMass, () => {
+  if (computedResults.value.length === 0 || computing.value) return;
+  redistributeByVolume();
+});
+
+const computedMassSum = computed(() => computedResults.value.reduce((s, r) => s + r.mass, 0));
 
 const massMismatch = computed(() => {
   if (computedResults.value.length === 0) return 0;
@@ -391,19 +552,19 @@ const massMismatch = computed(() => {
 async function runCompute(silent = false): Promise<void> {
   if (computing.value) return;
 
-  const existingSolidMass = new Map<string, number>();
+  const lockedMass = new Map<string, number>();
   for (const row of computedResults.value) {
-    for (const s of row.solids) existingSolidMass.set(s.solidId, s.mass);
+    for (const s of row.solids) {
+      if (s.locked && s.mass > 0) lockedMass.set(s.solidId, s.mass);
+    }
   }
-  let isRerun = computedResults.value.length > 0;
-  if (!isRerun) {
+  if (lockedMass.size === 0) {
     for (const l of urdfStore.robot.links) {
       if (!l.solidMasses) continue;
       for (const [sid, m] of Object.entries(l.solidMasses)) {
-        if (m > 0) existingSolidMass.set(sid, m);
+        if (m > 0 && urdfStore.isSolidMassLocked(sid)) lockedMass.set(sid, m);
       }
     }
-    isRerun = existingSolidMass.size > 0;
   }
 
   computing.value = true;
@@ -435,7 +596,7 @@ async function runCompute(silent = false): Promise<void> {
     const newResults = await distributeInertia(
       linkInputs,
       totalMass.value,
-      isRerun ? existingSolidMass : undefined,
+      lockedMass.size > 0 ? lockedMass : undefined,
     );
 
     if (newResults.length === 0) {
@@ -444,9 +605,10 @@ async function runCompute(silent = false): Promise<void> {
     }
 
     computedResults.value = newResults;
-  
+    syncLockFlags();
+
     if (!silent) {
-      const hint = isRerun ? "（已保留手动编辑的 Solid 质量）" : "";
+      const hint = lockedMass.size > 0 ? `（已锁定 ${lockedMass.size} 个 Solid 的质量）` : "";
       ElMessage.success(`计算完成，共 ${newResults.length} 个连杆 / ${solidCount} 个 Solid${hint}`);
     }
   } catch (e) {
@@ -594,28 +756,53 @@ function applyResults(): void {
   background: var(--el-fill-color-lighter);
 }
 
+.solid-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
 .solid-detail-title {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-2);
-  margin-bottom: 6px;
+}
+
+.solid-lock-btn {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.lock-badge {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-left: 2px;
 }
 
 .solid-mass-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 3px 0;
 }
 
 .solid-mass-name {
   font-size: 12px;
   color: var(--text-1);
-  width: 160px;
+  width: 150px;
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  &.is-locked {
+    color: var(--el-color-warning);
+    font-weight: 600;
+  }
 }
 
 .solid-mass-vol {
@@ -697,7 +884,8 @@ function applyResults(): void {
 }
 
 .inertia-panel {
-  width: 660px;
+  width: 880px;
+  max-width: calc(100vw - 32px);
   max-height: 70vh;
 }
 

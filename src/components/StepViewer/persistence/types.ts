@@ -26,6 +26,7 @@ export interface UrdfSection {
   robot: URDFRobot;
   inertialFrame?: "world";
   totalMass: number;
+  lockedSolidIds?: string[];
   exportFormat: ExportFormat;
   baseLinkOrigin: [number, number, number] | null;
   baseLinkRPY: [number, number, number] | null;

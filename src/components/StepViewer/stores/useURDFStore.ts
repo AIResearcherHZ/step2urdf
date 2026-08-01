@@ -84,6 +84,34 @@ export const useURDFStore = defineStore("urdf", () => {
   const baseLinkOrigin = ref<[number, number, number] | null>(null);
   const baseLinkRPY = ref<[number, number, number] | null>(null);
   const totalMass = ref(10);
+  const lockedSolidIds = ref<string[]>([]);
+
+  function isSolidMassLocked(solidId: string): boolean {
+    return lockedSolidIds.value.includes(solidId);
+  }
+
+  function setSolidMassLocked(solidId: string, locked: boolean): void {
+    const has = lockedSolidIds.value.includes(solidId);
+    if (locked && !has) lockedSolidIds.value = [...lockedSolidIds.value, solidId];
+    else if (!locked && has)
+      lockedSolidIds.value = lockedSolidIds.value.filter((id) => id !== solidId);
+  }
+
+  function clearSolidMassLocks(): void {
+    lockedSolidIds.value = [];
+  }
+
+  const lockedSolidMassMap = computed(() => {
+    const map = new Map<string, number>();
+    for (const link of robot.value.links) {
+      if (!link.solidMasses) continue;
+      for (const solidId of lockedSolidIds.value) {
+        const m = link.solidMasses[solidId];
+        if (typeof m === "number" && m > 0) map.set(solidId, m);
+      }
+    }
+    return map;
+  });
 
   const collisionConfig = ref<CollisionConfig>({
     mode: "auto",
@@ -227,9 +255,16 @@ export const useURDFStore = defineStore("urdf", () => {
     }
   }
 
+  function findSolidOwner(solidId: string): URDFLink | null {
+    return robot.value.links.find((l) => l.solidIds.includes(solidId)) ?? null;
+  }
+
   function bindSolid(linkId: string, solidId: string): void {
     const link = linkMap.value.get(linkId);
     if (!link || link.solidIds.includes(solidId)) return;
+
+    const owner = findSolidOwner(solidId);
+    if (owner) unbindSolid(owner.id, solidId);
 
     link.solidIds.push(solidId);
     link.inertial = null;
@@ -245,6 +280,7 @@ export const useURDFStore = defineStore("urdf", () => {
 
     link.solidIds = link.solidIds.filter((id) => id !== solidId);
     if (link.solidMasses) delete link.solidMasses[solidId];
+    setSolidMassLocked(solidId, false);
 
     if (renormalized) {
       if (Object.keys(renormalized).length > 0) link.solidMasses = renormalized;
@@ -712,6 +748,11 @@ export const useURDFStore = defineStore("urdf", () => {
     baseLinkOrigin,
     baseLinkRPY,
     totalMass,
+    lockedSolidIds,
+    lockedSolidMassMap,
+    isSolidMassLocked,
+    setSolidMassLocked,
+    clearSolidMassLocks,
     exportFormat,
     loopAnchorPickId,
 
@@ -739,6 +780,7 @@ export const useURDFStore = defineStore("urdf", () => {
     renameJoint,
     bindSolid,
     unbindSolid,
+    findSolidOwner,
 
     validateJoint,
     addJoint,

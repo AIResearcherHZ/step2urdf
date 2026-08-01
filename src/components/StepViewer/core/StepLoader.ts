@@ -13,6 +13,7 @@ import type {
 import { FeatureType } from "../types";
 import { initBVH, buildBVH } from "./BVHAccelerator";
 import type { StepParseWorkerApi } from "./StepParseWorker";
+import { createWorkerClient } from "./workerClient";
 
 interface PositionStats {
   empty: boolean;
@@ -30,55 +31,21 @@ interface SolidInfo {
   stats: PositionStats;
 }
 
-let worker: Worker | null = null;
-let workerProxy: Comlink.Remote<StepParseWorkerApi> | null = null;
-let workerReady = false;
-let workerInitPromise: Promise<void> | null = null;
-
-function getWorkerProxy(): Comlink.Remote<StepParseWorkerApi> {
-  if (!workerProxy) {
-    worker = new Worker(new URL("./StepParseWorker.ts", import.meta.url), { type: "module" });
-    workerProxy = Comlink.wrap<StepParseWorkerApi>(worker);
-  }
-  return workerProxy;
-}
+const client = createWorkerClient<StepParseWorkerApi>(
+  () => new Worker(new URL("./StepParseWorker.ts", import.meta.url), { type: "module" }),
+  (proxy) => proxy.init(),
+);
 
 export async function preloadOcct(): Promise<void> {
-  if (workerReady) return;
-  if (workerInitPromise) {
-    await workerInitPromise;
-    return;
-  }
-
-  workerInitPromise = (async () => {
-    try {
-      const proxy = getWorkerProxy();
-      await proxy.init();
-      workerReady = true;
-    } catch (err) {
-      workerInitPromise = null;
-      throw err;
-    }
-  })();
-
-  await workerInitPromise;
+  await client.ready();
 }
 
 export function isOcctLoaded(): boolean {
-  return workerReady;
+  return client.isReady();
 }
 
 export function terminateWorker(): void {
-  if (workerProxy) {
-    workerProxy[Comlink.releaseProxy]();
-    workerProxy = null;
-  }
-  if (worker) {
-    worker.terminate();
-    worker = null;
-    workerReady = false;
-    workerInitPromise = null;
-  }
+  client.dispose();
 }
 
 export class StepLoader {
@@ -200,7 +167,7 @@ export class StepLoader {
     fileBuffer: ArrayBuffer,
     onProgress?: (progress: UploadProgress) => void,
   ): Promise<{ solids: SerializedSolidData[]; tree: SerializedTreeNode }> {
-    const proxy = getWorkerProxy();
+    const proxy = client.get();
 
     const progressCallback = onProgress
       ? Comlink.proxy((stage: string, percent: number) => {
@@ -504,9 +471,14 @@ export class StepLoader {
     const instancedMesh = new THREE.InstancedMesh(sharedGeometry, instanceMaterial, members.length);
     instancedMesh.name = `Instanced_${ref.data.name || "Solid"}_x${members.length}`;
 
-    const tempMatrix = new THREE.Matrix4();
+    const baseMatrices: THREE.Matrix4[] = [];
     members.forEach((member, i) => {
-      tempMatrix.makeTranslation(member.centroid.x, member.centroid.y, member.centroid.z);
+      const tempMatrix = new THREE.Matrix4().makeTranslation(
+        member.centroid.x,
+        member.centroid.y,
+        member.centroid.z,
+      );
+      baseMatrices[i] = tempMatrix;
       instancedMesh.setMatrixAt(i, tempMatrix);
 
       let color = new THREE.Color(0x8899aa);
@@ -701,6 +673,7 @@ export class StepLoader {
         name: member.data.name || `Solid_${solidIndex}`,
         mesh: instancedMesh as unknown as THREE.Mesh,
         instanceId: i,
+        instanceBaseMatrix: baseMatrices[i].clone(),
         edgeLines: mergedEdgeLines || undefined,
         edgeVertexRange: range,
         topologyEdges: mergedTopologyEdges || undefined,

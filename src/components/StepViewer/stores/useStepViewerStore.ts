@@ -1,8 +1,10 @@
 import { defineStore } from "pinia";
-import { ref, computed, markRaw } from "vue";
+import { ref, shallowRef, computed, markRaw } from "vue";
 import * as THREE from "three";
 import type { SolidObject, GeometryFeature, UploadProgress, TreeNode } from "../types";
 import type { LineMeasurementData } from "../core/LineMeasurementTool";
+
+const IDENTITY_MATRIX = new THREE.Matrix4().toArray();
 
 export const useStepViewerStore = defineStore("stepViewer", () => {
   const uploadProgress = ref<UploadProgress>({
@@ -11,7 +13,9 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
     message: "",
   });
 
-  const solids = ref<SolidObject[]>([]);
+  const solids = shallowRef<SolidObject[]>([]);
+  const solidRevision = ref(0);
+  const focusedSolidId = ref<string | null>(null);
   const modelRotationElements = ref<number[] | null>(null);
   const currentFileName = ref<string>("");
 
@@ -49,54 +53,75 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
 
   const featureStats = computed(() => {
     const stats: Record<string, number> = {};
-    solids.value.forEach((solid) => {
-      solid.features.forEach((feature) => {
-        const type = feature.type;
-        stats[type] = (stats[type] || 0) + 1;
-      });
-    });
+    for (const solid of solids.value) {
+      for (const feature of solid.features) {
+        stats[feature.type] = (stats[feature.type] || 0) + 1;
+      }
+    }
     return stats;
   });
 
-  const flatTreeNodes = computed(() => {
-    const result: TreeNode[] = [];
+  const flatTreeNodeMap = computed(() => {
+    const map = new Map<string, TreeNode>();
     const walk = (nodes: TreeNode[]) => {
       for (const node of nodes) {
-        result.push(node);
+        map.set(node.id, node);
         if (node.children) walk(node.children);
       }
     };
     walk(treeNodes.value);
-    return result;
+    return map;
   });
 
   const selectedTreeNodeIdSet = computed(() => new Set(selectedTreeNodeIds.value));
 
   const solidMap = computed(() => {
     const map = new Map<string, SolidObject>();
-    solids.value.forEach((s) => map.set(s.id, s));
+    for (const s of solids.value) map.set(s.id, s);
     return map;
   });
 
-  const selectedSolidNames = computed(() => {
-    return selectedTreeNodeIds.value
-      .map((id) => flatTreeNodes.value.find((n) => n.id === id))
-      .filter(Boolean)
-      .map((n) => n!.name);
+  const solidNameMap = computed(() => {
+    void solidRevision.value;
+    const map = new Map<string, string>();
+    for (const s of solids.value) map.set(s.id, s.name);
+    return map;
   });
+
+  const selectedSolidNames = computed(() =>
+    selectedTreeNodeIds.value
+      .map((id) => flatTreeNodeMap.value.get(id)?.name)
+      .filter((name): name is string => !!name),
+  );
 
   function updateUploadProgress(progress: Partial<UploadProgress>): void {
     uploadProgress.value = { ...uploadProgress.value, ...progress };
   }
 
   function setSolids(newSolids: SolidObject[]): void {
-    for (const solid of newSolids) {
-      if (solid.mesh) markRaw(solid.mesh);
-      if (solid.serializedData) markRaw(solid.serializedData as any);
-      if (solid.edgeLines) markRaw(solid.edgeLines);
-      if (solid.topologyEdges) markRaw(solid.topologyEdges);
-    }
-    solids.value = newSolids;
+    solids.value = newSolids.map((s) => markRaw(s));
+    focusedSolidId.value = null;
+    solidRevision.value++;
+  }
+
+  function setFocusedSolid(solidId: string | null): void {
+    focusedSolidId.value = solidId;
+  }
+
+  function renameSolid(solidId: string, name: string): boolean {
+    const trimmed = name.trim();
+    const solid = solidMap.value.get(solidId);
+    if (!solid || !trimmed || trimmed === solid.name) return false;
+
+    solid.name = trimmed;
+    if (solid.instanceId === undefined) solid.mesh.name = trimmed;
+    if (solid.serializedData) solid.serializedData.name = trimmed;
+
+    const node = flatTreeNodeMap.value.get(solidId);
+    if (node) node.name = trimmed;
+    treeNodes.value = [...treeNodes.value];
+    solidRevision.value++;
+    return true;
   }
 
   function getModelRotation(): THREE.Matrix4 {
@@ -112,8 +137,7 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
   const isModelRotated = computed(() => {
     const e = modelRotationElements.value;
     if (!e) return false;
-    const identity = new THREE.Matrix4().toArray();
-    return e.some((v, i) => Math.abs(v - identity[i]) > 1e-12);
+    return e.some((v, i) => Math.abs(v - IDENTITY_MATRIX[i]) > 1e-12);
   });
 
   function setTreeNodes(nodes: TreeNode[]): void {
@@ -161,6 +185,7 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
 
   function clearModel(): void {
     solids.value = [];
+    focusedSolidId.value = null;
     modelRotationElements.value = null;
     currentFileName.value = "";
     selectedFeatures.value = [];
@@ -185,6 +210,7 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
   function clearSelection(): void {
     selectedFeatures.value = [];
     selectedTreeNodeIds.value = [];
+    focusedSolidId.value = null;
   }
 
   function addLineMeasurement(line: LineMeasurementData): void {
@@ -256,6 +282,7 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
     isTransparent,
     solidVisibilityMap,
     modelRotationElements,
+    focusedSolidId,
 
     hasModel,
     isLoading,
@@ -263,15 +290,18 @@ export const useStepViewerStore = defineStore("stepViewer", () => {
     secondSelectedFeature,
     canMeasure,
     featureStats,
-    flatTreeNodes,
+    flatTreeNodeMap,
     selectedTreeNodeIdSet,
     selectedSolidNames,
     solidMap,
+    solidNameMap,
     treeNodeCount,
     isModelRotated,
 
     updateUploadProgress,
     setSolids,
+    setFocusedSolid,
+    renameSolid,
     getModelRotation,
     setModelRotation,
     setFileName,

@@ -17,6 +17,7 @@
           @solid-hover="handleSolidHover"
           @toggle-solid-visibility="handleToggleSolidVisibility"
           @split-solid="(id: string) => emit('splitSolid', id)"
+          @rename-solid="(id: string) => emit('renameSolid', id)"
         />
 
         <div class="resize-handle" @mousedown.prevent="startResize" />
@@ -39,6 +40,7 @@ const emit = defineEmits<{
   (e: "solidHover", solidId: string | null): void;
   (e: "toggleSolidVisibility", solidId: string): void;
   (e: "splitSolid", solidId: string): void;
+  (e: "renameSolid", solidId: string): void;
   (e: "close"): void;
 }>();
 

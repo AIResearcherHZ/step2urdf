@@ -85,15 +85,15 @@
 }
 
 .el-button:not(
-    .el-button--primary,
-    .el-button--success,
-    .el-button--warning,
-    .el-button--danger,
-    .el-button--info,
-    .is-plain,
-    .is-link,
-    .is-text
-  ) {
+  .el-button--primary,
+  .el-button--success,
+  .el-button--warning,
+  .el-button--danger,
+  .el-button--info,
+  .is-plain,
+  .is-link,
+  .is-text
+) {
   --el-button-bg-color: var(--btn-face);
   --el-button-border-color: var(--btn-edge);
   --el-button-text-color: var(--text-1);

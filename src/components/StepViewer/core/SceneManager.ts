@@ -2,7 +2,13 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import type { ViewPreset, CameraConfig } from "../types";
-import { createRenderer, configureRenderer, takeScreenshot, type RendererType, type UniversalRenderer } from "./RendererFactory";
+import {
+  createRenderer,
+  configureRenderer,
+  takeScreenshot,
+  type RendererType,
+  type UniversalRenderer,
+} from "./RendererFactory";
 
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 
@@ -105,9 +111,9 @@ export class SceneManager {
       {
         antialias: config.antialias !== false,
         alpha: true,
-        preserveDrawingBuffer: true
+        preserveDrawingBuffer: true,
       },
-      config.preferWebGPU !== false
+      config.preferWebGPU !== false,
     );
 
     this.renderer = renderer;
@@ -116,7 +122,7 @@ export class SceneManager {
     configureRenderer(renderer, type, {
       width: this.width,
       height: this.height,
-      shadowMapEnabled: true
+      shadowMapEnabled: true,
     });
 
     const tempCanvas = this.container.querySelector("canvas");
@@ -168,7 +174,7 @@ export class SceneManager {
   private computeSceneStats(): void {
     let totalVertices = 0;
     let totalTriangles = 0;
-    this.modelGroup.traverse(obj => {
+    this.modelGroup.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         const geo = obj.geometry as THREE.BufferGeometry;
         const posAttr = geo.getAttribute("position");
@@ -283,7 +289,7 @@ export class SceneManager {
 
         this.frameDrawCalls = this.renderer.info?.render?.calls ?? 0;
 
-        this.renderCallbacks.forEach(callback => callback());
+        this.renderCallbacks.forEach((callback) => callback());
 
         this._needsRender = false;
       }
@@ -358,7 +364,7 @@ export class SceneManager {
       this.disposeObject(child, materials);
     }
 
-    materials.forEach(m => m.dispose());
+    materials.forEach((m) => m.dispose());
 
     this.computeSceneStats();
     this.markDirty();
@@ -378,7 +384,7 @@ export class SceneManager {
       }
       if (object.material) {
         if (Array.isArray(object.material)) {
-          object.material.forEach(m => out.add(m));
+          object.material.forEach((m) => out.add(m));
         } else {
           out.add(object.material);
         }
@@ -387,7 +393,7 @@ export class SceneManager {
     if (object instanceof THREE.InstancedMesh) {
       object.dispose();
     }
-    object.children.forEach(child => this.disposeObject(child, out));
+    object.children.forEach((child) => this.disposeObject(child, out));
   }
 
   fitToModel(padding: number = 1.5): void {
@@ -518,7 +524,12 @@ export class SceneManager {
     }
   }
 
-  private animateCameraTo(position: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3, duration: number = 500): void {
+  private animateCameraTo(
+    position: THREE.Vector3,
+    target: THREE.Vector3,
+    up: THREE.Vector3,
+    duration: number = 500,
+  ): void {
     const startPosition = this.camera.position.clone();
     const startTarget = this.controls.target.clone();
     const startUp = this.camera.up.clone();
@@ -558,7 +569,7 @@ export class SceneManager {
       up: this.camera.up.clone(),
       fov: this.camera.fov,
       near: this.camera.near,
-      far: this.camera.far
+      far: this.camera.far,
     };
   }
 

@@ -194,7 +194,8 @@ function readJoint(
 ): { name: string; type: JointType; axis: [number, number, number]; limits: JointLimits } {
   const name = jointEl.getAttribute("name") || `${bodyName}_j${index + 1}`;
   const axis = readVec3(jointEl.getAttribute("axis") || "0 0 1");
-  const rawType = jointEl.tagName === "freejoint" ? "free" : jointEl.getAttribute("type") || "hinge";
+  const rawType =
+    jointEl.tagName === "freejoint" ? "free" : jointEl.getAttribute("type") || "hinge";
   const range = jointEl.getAttribute("range");
   const limited = jointEl.getAttribute("limited");
   const hasRange = !!range && limited !== "false";
@@ -209,7 +210,12 @@ function readJoint(
             effort: 100,
             velocity: 100 * ctx.scale,
           }
-        : { lower: -100 * ctx.scale, upper: 100 * ctx.scale, effort: 100, velocity: 100 * ctx.scale };
+        : {
+            lower: -100 * ctx.scale,
+            upper: 100 * ctx.scale,
+            effort: 100,
+            velocity: 100 * ctx.scale,
+          };
       return { name, type: "prismatic", axis, limits };
     }
     case "ball": {

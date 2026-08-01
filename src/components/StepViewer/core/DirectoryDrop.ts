@@ -25,7 +25,7 @@ function readEntries(entry: FileSystemEntryLike): Promise<FileSystemEntryLike[]>
   const all: FileSystemEntryLike[] = [];
   return new Promise((resolve, reject) => {
     const step = (): void => {
-      reader.readEntries(batch => {
+      reader.readEntries((batch) => {
         if (batch.length === 0) {
           resolve(all);
           return;
@@ -42,7 +42,11 @@ function entryFile(entry: FileSystemEntryLike): Promise<File> {
   return new Promise((resolve, reject) => entry.file(resolve, reject));
 }
 
-async function walkEntry(entry: FileSystemEntryLike, prefix: string, out: PackageFile[]): Promise<void> {
+async function walkEntry(
+  entry: FileSystemEntryLike,
+  prefix: string,
+  out: PackageFile[],
+): Promise<void> {
   if (out.length >= MAX_ENTRIES) return;
 
   if (entry.isFile) {
@@ -73,7 +77,9 @@ export async function collectFilesFromDataTransfer(transfer: DataTransfer): Prom
 
   for (const item of items) {
     if (item.kind !== "file") continue;
-    const getter = (item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntryLike | null }).webkitGetAsEntry;
+    const getter = (
+      item as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntryLike | null }
+    ).webkitGetAsEntry;
     const entry = getter ? getter.call(item) : null;
     if (entry) entries.push(entry);
   }
@@ -86,7 +92,9 @@ export async function collectFilesFromDataTransfer(transfer: DataTransfer): Prom
   }
 
   for (const file of Array.from(transfer.files ?? [])) {
-    const path = normalizePath((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name);
+    const path = normalizePath(
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+    );
     if (isUseful(path)) out.push({ path, file });
   }
 
@@ -96,7 +104,9 @@ export async function collectFilesFromDataTransfer(transfer: DataTransfer): Prom
 export function collectFilesFromInput(fileList: FileList | File[]): PackageFile[] {
   const out: PackageFile[] = [];
   for (const file of Array.from(fileList)) {
-    const path = normalizePath((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name);
+    const path = normalizePath(
+      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+    );
     if (isUseful(path)) out.push({ path, file });
   }
   return out;

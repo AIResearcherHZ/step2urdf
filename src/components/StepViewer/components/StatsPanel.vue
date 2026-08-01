@@ -58,13 +58,13 @@ const fpsClass = computed(() => {
   return "fps-bad";
 });
 
-const memoryInfo = computed(() => {
-  if (!("memory" in performance)) return null;
-  const mem = (performance as any).memory;
+const memoryInfo = ref<string | null>(null);
+
+function readMemory(): string | null {
+  const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
   if (!mem) return null;
-  const usedMB = Math.round(mem.usedJSHeapSize / 1024 / 1024);
-  return `${usedMB} MB`;
-});
+  return `${Math.round(mem.usedJSHeapSize / 1024 / 1024)} MB`;
+}
 
 function formatNumber(num: number): string {
   if (num >= 1000000) {
@@ -87,6 +87,7 @@ function updateStats() {
     fps.value = Math.round((frameCount * 1000) / (now - lastTime));
     frameCount = 0;
     lastTime = now;
+    memoryInfo.value = readMemory();
   }
 
   animationId = requestAnimationFrame(updateStats);
@@ -97,6 +98,7 @@ function startMonitoring() {
   lastTime = performance.now();
   lastFrameTime = performance.now();
   frameCount = 0;
+  memoryInfo.value = readMemory();
   animationId = requestAnimationFrame(updateStats);
 }
 

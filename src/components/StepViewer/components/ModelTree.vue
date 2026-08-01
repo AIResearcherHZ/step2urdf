@@ -46,6 +46,24 @@
             <span
               v-if="data.type === 'solid'"
               class="node-split"
+              title="重命名 Solid"
+              @click.stop="handleRename(data)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </span>
+            <span
+              v-if="data.type === 'solid'"
+              class="node-split"
               title="按连通面片拆解为多个 Solid"
               @click.stop="handleSplit(data)"
             >
@@ -113,6 +131,7 @@ const emit = defineEmits<{
   (e: "solidHover", solidId: string | null): void;
   (e: "toggleSolidVisibility", solidId: string): void;
   (e: "splitSolid", solidId: string): void;
+  (e: "renameSolid", solidId: string): void;
 }>();
 
 const treeRef = ref();
@@ -162,22 +181,19 @@ function getEdgeTypeIcon(name: string): string {
   return "—";
 }
 
-function handleNodeClick(data: any, _node: any, e: MouseEvent): void {
-  const node = data as TreeNode;
+function handleNodeClick(node: TreeNode, _node: unknown, e: MouseEvent): void {
   const multi = e?.ctrlKey || e?.shiftKey || false;
   selectionFromTree = true;
   emit("select", node, multi);
 }
 
-function handleNodeExpand(data: any): void {
-  const node = data as TreeNode;
+function handleNodeExpand(node: TreeNode): void {
   if (!store.expandedTreeNodeIds.includes(node.id)) {
     store.expandedTreeNodeIds.push(node.id);
   }
 }
 
-function handleNodeCollapse(data: any): void {
-  const node = data as TreeNode;
+function handleNodeCollapse(node: TreeNode): void {
   const idx = store.expandedTreeNodeIds.indexOf(node.id);
   if (idx >= 0) {
     store.expandedTreeNodeIds.splice(idx, 1);
@@ -187,8 +203,7 @@ function handleNodeCollapse(data: any): void {
 let hoveredSolidId: string | null = null;
 let hoverRafId = 0;
 
-function handleNodeMouseEnter(data: any): void {
-  const node = data as TreeNode;
+function handleNodeMouseEnter(node: TreeNode): void {
   if (node.type !== "solid" || node.solidIndex === undefined) {
     if (hoveredSolidId !== null) {
       hoveredSolidId = null;
@@ -214,21 +229,23 @@ function handleNodeMouseLeave(): void {
   }
 }
 
-function handleToggleVisibility(data: any): void {
-  const node = data as TreeNode;
+function handleToggleVisibility(node: TreeNode): void {
   if (node.type !== "solid" || node.solidIndex === undefined) return;
   const solidId = `solid_${node.solidIndex}`;
   emit("toggleSolidVisibility", solidId);
 }
 
-function handleSplit(data: any): void {
-  const node = data as TreeNode;
+function handleRename(node: TreeNode): void {
+  if (node.type !== "solid" || node.solidIndex === undefined) return;
+  emit("renameSolid", `solid_${node.solidIndex}`);
+}
+
+function handleSplit(node: TreeNode): void {
   if (node.type !== "solid" || node.solidIndex === undefined) return;
   emit("splitSolid", `solid_${node.solidIndex}`);
 }
 
-function isSolidVisible(data: any): boolean {
-  const node = data as TreeNode;
+function isSolidVisible(node: TreeNode): boolean {
   if (node.solidIndex === undefined) return true;
   return store.isSolidVisible(`solid_${node.solidIndex}`);
 }
