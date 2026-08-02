@@ -266,10 +266,11 @@ function startRename(data: URDFTreeNode): void {
 function finishRename(data: URDFTreeNode): void {
   const name = editingName.value.trim();
   if (name) {
-    if (data.nodeType === "link") {
-      urdfStore.renameLink(data.id, name);
-    } else {
-      urdfStore.renameJoint(data.id, name);
+    const result =
+      data.nodeType === "link" ? urdfStore.renameLink(data.id, name) : urdfStore.renameJoint(data.id, name);
+    if (!result.ok) {
+      ElMessage.warning(result.reason);
+      return;
     }
   }
   editingId.value = null;

@@ -86,6 +86,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5678,
     open: true,
+    forwardConsole: true,
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",

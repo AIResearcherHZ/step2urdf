@@ -245,18 +245,26 @@ export const useURDFStore = defineStore("urdf", () => {
     return { ok: true };
   }
 
-  function renameLink(linkId: string, newName: string): void {
+  function renameLink(linkId: string, newName: string): { ok: boolean; reason?: string } {
     const link = linkMap.value.get(linkId);
-    if (link) {
-      link.name = newName;
+    if (!link) return { ok: false, reason: "连杆不存在" };
+    const duplicate = robot.value.links.find((l) => l.id !== linkId && l.name === newName);
+    if (duplicate) {
+      return { ok: false, reason: `连杆名 "${newName}" 已被占用，请使用唯一名称` };
     }
+    link.name = newName;
+    return { ok: true };
   }
 
-  function renameJoint(jointId: string, newName: string): void {
+  function renameJoint(jointId: string, newName: string): { ok: boolean; reason?: string } {
     const joint = jointMap.value.get(jointId);
-    if (joint) {
-      joint.name = newName;
+    if (!joint) return { ok: false, reason: "关节不存在" };
+    const duplicate = robot.value.joints.find((j) => j.id !== jointId && j.name === newName);
+    if (duplicate) {
+      return { ok: false, reason: `关节名 "${newName}" 已被占用，请使用唯一名称` };
     }
+    joint.name = newName;
+    return { ok: true };
   }
 
   function findSolidOwner(solidId: string): URDFLink | null {

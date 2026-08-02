@@ -474,6 +474,16 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
       ElMessage.warning(`以下 Link 未被任何 Joint 连接: ${orphans.join(", ")}`);
     }
 
+    const nameCounts = new Map<string, number>();
+    for (const link of urdfStore.robot.links) {
+      nameCounts.set(link.name, (nameCounts.get(link.name) ?? 0) + 1);
+    }
+    const duplicateNames = [...nameCounts.entries()].filter(([, count]) => count > 1).map(([n]) => n);
+    if (duplicateNames.length > 0) {
+      ElMessage.error(`存在重复的连杆名称，会导致 URDF/MJCF 无法加载: ${duplicateNames.join(", ")}`);
+      return;
+    }
+
     urdfStore.exporting = true;
     urdfStore.exportProgress = "正在生成 URDF...";
 

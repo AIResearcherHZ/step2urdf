@@ -65,7 +65,15 @@ export function parseMJCF(xml: string, options?: URDFParseOptions): RobotParseRe
 
   const topBodies = Array.from(worldbody.children).filter((el) => el.tagName === "body");
   for (const body of topBodies) {
-    walkBody(body, baseLink.id, new THREE.Matrix4(), ctx);
+    if (topBodies.length === 1 && body.getAttribute("name") === "base_link") {
+      baseLink.inertial = readInertial(body, ctx);
+      ctx.linkIdByBodyName.set("base_link", baseLink.id);
+      for (const child of Array.from(body.children)) {
+        if (child.tagName === "body") walkBody(child, baseLink.id, new THREE.Matrix4(), ctx);
+      }
+    } else {
+      walkBody(body, baseLink.id, new THREE.Matrix4(), ctx);
+    }
   }
 
   if (ctx.links.length === 1) {
