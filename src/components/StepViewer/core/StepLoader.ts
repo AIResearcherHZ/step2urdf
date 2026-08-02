@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { EdgesGeometry, LineSegments, LineBasicMaterial } from "three";
 import * as Comlink from "comlink";
 import type {
   FileValidationResult,
@@ -493,11 +492,11 @@ export class StepLoader {
 
     group.add(instancedMesh);
 
-    let mergedEdgeLines: LineSegments | null = null;
+    let mergedEdgeLines: THREE.LineSegments | null = null;
     const edgeVertexRanges = new Map<number, [number, number]>();
 
     try {
-      const sharedEdgesGeo = new EdgesGeometry(sharedGeometry, 30);
+      const sharedEdgesGeo = new THREE.EdgesGeometry(sharedGeometry, 30);
       const edgePosAttr = sharedEdgesGeo.getAttribute("position");
 
       if (edgePosAttr && edgePosAttr.count > 0) {
@@ -531,14 +530,14 @@ export class StepLoader {
         mergedGeo.setAttribute("position", new THREE.Float32BufferAttribute(allPositions, 3));
         mergedGeo.setAttribute("color", new THREE.Float32BufferAttribute(allColors, 3));
 
-        const mergedMaterial = new LineBasicMaterial({
+        const mergedMaterial = new THREE.LineBasicMaterial({
           vertexColors: true,
           transparent: true,
           opacity: 0.6,
           depthTest: true,
         });
 
-        mergedEdgeLines = new LineSegments(mergedGeo, mergedMaterial);
+        mergedEdgeLines = new THREE.LineSegments(mergedGeo, mergedMaterial);
         mergedEdgeLines.name = "mergedEdgeLines";
         mergedEdgeLines.renderOrder = 1;
         group.add(mergedEdgeLines);
@@ -547,7 +546,7 @@ export class StepLoader {
       sharedEdgesGeo.dispose();
     } catch {}
 
-    let mergedTopologyEdges: LineSegments | null = null;
+    let mergedTopologyEdges: THREE.LineSegments | null = null;
     const topologyEdgeVertexRangesAll = new Map<number, Map<number, [number, number]>>();
 
     try {
@@ -621,9 +620,9 @@ export class StepLoader {
         topoGeo.setAttribute("color", new THREE.Float32BufferAttribute(allCol, 3));
         topoGeo.setAttribute("edgeIndex", new THREE.Float32BufferAttribute(allEdgeIdx, 1));
 
-        mergedTopologyEdges = new LineSegments(
+        mergedTopologyEdges = new THREE.LineSegments(
           topoGeo,
-          new LineBasicMaterial({
+          new THREE.LineBasicMaterial({
             vertexColors: true,
             transparent: true,
             opacity: 0.8,
@@ -738,12 +737,12 @@ export class StepLoader {
 
     return geometry;
   }
-  private createEdgeLines(geometry: THREE.BufferGeometry): LineSegments | null {
+  private createEdgeLines(geometry: THREE.BufferGeometry): THREE.LineSegments | null {
     try {
-      const edgesGeo = new EdgesGeometry(geometry, 30);
+      const edgesGeo = new THREE.EdgesGeometry(geometry, 30);
       if (edgesGeo.getAttribute("position")?.count === 0) return null;
 
-      const edgeMaterial = new LineBasicMaterial({
+      const edgeMaterial = new THREE.LineBasicMaterial({
         color: StepLoader.EDGE_COLOR,
         linewidth: StepLoader.EDGE_LINE_WIDTH,
         transparent: true,
@@ -751,7 +750,7 @@ export class StepLoader {
         depthTest: true,
       });
 
-      const lines = new LineSegments(edgesGeo, edgeMaterial);
+      const lines = new THREE.LineSegments(edgesGeo, edgeMaterial);
       lines.name = "edgeLines";
       lines.renderOrder = 1;
       return lines;
@@ -760,7 +759,7 @@ export class StepLoader {
     }
   }
 
-  private createTopologyEdges(solidData: SerializedSolidData): LineSegments | null {
+  private createTopologyEdges(solidData: SerializedSolidData): THREE.LineSegments | null {
     if (!solidData.edgeGroups || solidData.edgeGroups.length === 0) return null;
     if (!solidData.edgePolylines || solidData.edgePolylines.length === 0) return null;
 
@@ -798,14 +797,14 @@ export class StepLoader {
       geo.setAttribute("position", new THREE.Float32BufferAttribute(segments, 3));
       geo.setAttribute("edgeIndex", new THREE.Float32BufferAttribute(edgeIndices, 1));
 
-      const mat = new LineBasicMaterial({
+      const mat = new THREE.LineBasicMaterial({
         color: 0x444444,
         transparent: true,
         opacity: 0.8,
         depthTest: true,
       });
 
-      const lines = new LineSegments(geo, mat);
+      const lines = new THREE.LineSegments(geo, mat);
       lines.name = "topologyEdges";
       lines.renderOrder = 2;
       return lines;

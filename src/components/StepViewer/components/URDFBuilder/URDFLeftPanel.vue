@@ -267,7 +267,9 @@ function finishRename(data: URDFTreeNode): void {
   const name = editingName.value.trim();
   if (name) {
     const result =
-      data.nodeType === "link" ? urdfStore.renameLink(data.id, name) : urdfStore.renameJoint(data.id, name);
+      data.nodeType === "link"
+        ? urdfStore.renameLink(data.id, name)
+        : urdfStore.renameJoint(data.id, name);
     if (!result.ok) {
       ElMessage.warning(result.reason);
       return;

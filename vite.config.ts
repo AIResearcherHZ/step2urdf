@@ -71,7 +71,7 @@ export default defineConfig({
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
     exclude: ["occt-wasm"],
-    include: ["gl-matrix", "comlink", "@zip.js/zip.js"],
+    include: ["gl-matrix", "comlink", "fflate"],
   },
   worker: {
     format: "es",

@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, shallowRef, computed } from "vue";
 import * as THREE from "three";
 import type {
   URDFRobot,
@@ -76,7 +76,7 @@ export const useURDFStore = defineStore("urdf", () => {
   const showFrames = ref(true);
   const urdfEditorVisible = ref(false);
 
-  const linkWorldTransforms = ref(new Map<string, THREE.Matrix4>());
+  const linkWorldTransforms = shallowRef(new Map<string, THREE.Matrix4>());
 
   const axisHelperScale = ref<number>(1.0);
 

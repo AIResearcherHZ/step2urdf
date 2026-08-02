@@ -478,9 +478,13 @@ export function useURDFScene(deps: UseURDFSceneDeps) {
     for (const link of urdfStore.robot.links) {
       nameCounts.set(link.name, (nameCounts.get(link.name) ?? 0) + 1);
     }
-    const duplicateNames = [...nameCounts.entries()].filter(([, count]) => count > 1).map(([n]) => n);
+    const duplicateNames = [...nameCounts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([n]) => n);
     if (duplicateNames.length > 0) {
-      ElMessage.error(`存在重复的连杆名称，会导致 URDF/MJCF 无法加载: ${duplicateNames.join(", ")}`);
+      ElMessage.error(
+        `存在重复的连杆名称，会导致 URDF/MJCF 无法加载: ${duplicateNames.join(", ")}`,
+      );
       return;
     }
 

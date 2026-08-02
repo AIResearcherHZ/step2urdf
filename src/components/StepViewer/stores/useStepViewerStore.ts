@@ -4,7 +4,7 @@ import * as THREE from "three";
 import type { SolidObject, GeometryFeature, UploadProgress, TreeNode } from "../types";
 import type { LineMeasurementData } from "../core/LineMeasurementTool";
 
-const IDENTITY_MATRIX = new THREE.Matrix4().toArray();
+const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 export const useStepViewerStore = defineStore("stepViewer", () => {
   const uploadProgress = ref<UploadProgress>({

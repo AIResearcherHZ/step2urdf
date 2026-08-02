@@ -1,8 +1,8 @@
 import * as Comlink from "comlink";
-import { BlobWriter, TextReader, Uint8ArrayReader, ZipWriter, configure } from "@zip.js/zip.js";
+import { zipSync, type Zippable } from "fflate";
 import type { SerializedSolidData } from "../types";
 
-configure({ useWebWorkers: false });
+const encoder = new TextEncoder();
 
 function generateBinarySTL(
   solidDataList: SerializedSolidData[],
@@ -122,17 +122,12 @@ const workerApi = {
     onProgress?: (stage: string, percent: number) => void,
     extraFiles?: Record<string, string>,
   ): Promise<Blob> {
-    const zipWriter = new ZipWriter(new BlobWriter("application/zip"), {
-      level: 6,
-      zip64: true,
-      bufferedWrite: false,
-      keepOrder: false,
-    });
+    const entries: Zippable = {};
 
-    if (urdfXml) await zipWriter.add("robot.urdf", new TextReader(urdfXml));
+    if (urdfXml) entries["robot.urdf"] = encoder.encode(urdfXml);
     if (extraFiles) {
       for (const [path, content] of Object.entries(extraFiles)) {
-        await zipWriter.add(path, new TextReader(content));
+        entries[path] = encoder.encode(content);
       }
     }
 
@@ -149,14 +144,12 @@ const workerApi = {
 
       const restInverse = linkRestInverseMap[linkName];
       const stlBuffer = generateBinarySTL(solidDataList, restInverse, unitScale);
-      await zipWriter.add(
-        `meshes/${linkName}.stl`,
-        new Uint8ArrayReader(new Uint8Array(stlBuffer)),
-      );
+      entries[`meshes/${linkName}.stl`] = new Uint8Array(stlBuffer);
     }
 
     onProgress?.("正在打包 ZIP...", 90);
-    const blob = await zipWriter.close();
+    const zipped = zipSync(entries, { level: 6 });
+    const blob = new Blob([zipped as BlobPart], { type: "application/zip" });
 
     onProgress?.("导出完成", 100);
     return blob;

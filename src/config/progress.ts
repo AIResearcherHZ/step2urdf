@@ -13,6 +13,4 @@ export const progressOptions: BProgressOptions = {
   positionUsing: "translate3d",
 };
 
-BProgress.configure(progressOptions);
-
 export { BProgress };

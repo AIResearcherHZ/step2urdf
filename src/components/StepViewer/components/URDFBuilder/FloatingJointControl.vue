@@ -1,12 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="fk-panel">
-      <div
-        v-show="visible"
-        class="fk-floating-panel"
-        ref="panelRef"
-        @pointerdown="bringToFront"
-      >
+      <div v-show="visible" class="fk-floating-panel" ref="panelRef" @pointerdown="bringToFront">
         <div class="fk-title-bar" ref="handleRef">
           <span class="fk-title">🎛️ 关节控制</span>
           <div class="fk-title-actions">

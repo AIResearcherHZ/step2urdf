@@ -1,12 +1,7 @@
 <template>
   <Teleport to="body">
     <Transition name="measure-panel">
-      <div
-        v-show="visible"
-        class="measure-panel"
-        ref="panelRef"
-        @pointerdown="bringToFront"
-      >
+      <div v-show="visible" class="measure-panel" ref="panelRef" @pointerdown="bringToFront">
         <div class="panel-header" ref="handleRef">
           <span class="panel-title">📏 测量列表</span>
           <span class="panel-count" v-if="store.lineMeasurements.length">
